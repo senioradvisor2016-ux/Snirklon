@@ -1642,19 +1642,524 @@ feedback.delay = 10  // samples delay för stabilitet
 
 ---
 
-#### 3C.10 Stödda Hardware
+#### 3C.10 Expert Sleepers ES-9 Integration (Primary Support)
 
-| Gränssnitt | CV Out | CV In | Protokoll | Latens |
-|------------|--------|-------|-----------|--------|
-| Expert Sleepers ES-9 | 16 | 6 | USB | <1ms |
-| Expert Sleepers ES-8 | 8 | 4 | USB | <1ms |
-| Expert Sleepers ES-3 | 8 | - | ADAT | <2ms |
-| MOTU UltraLite mk5 | 10 | 2 | USB | <1ms |
-| MOTU 828es | 28 | 28 | USB/TB | <1ms |
-| RME Fireface UCX II | 8 | 8 | USB | <1ms |
-| Befaco VCMC | 8 | - | USB MIDI | <3ms |
-| Endorphin.es Shuttle Control | 16 | - | USB | <1ms |
-| Intellijel Audio Interface II | 4 | 4 | USB | <1ms |
+##### ES-9 Översikt
+
+Expert Sleepers ES-9 är det primära CV-gränssnittet för Snirklon med full integration:
+
+| Specifikation | Värde |
+|---------------|-------|
+| **CV Outputs** | 8 (DC-kopplade, ±10V) |
+| **CV Inputs** | 4 (DC-kopplade, ±10V) |
+| **Headphone Output** | 1 (stereo, AC-kopplad) |
+| **Line Inputs** | 2 (AC-kopplade) |
+| **ADAT In** | 8 kanaler (expanderbar) |
+| **ADAT Out** | 8 kanaler (expanderbar) |
+| **Sample Rates** | 44.1, 48, 88.2, 96 kHz |
+| **Bit Depth** | 24-bit |
+| **USB** | USB 2.0 Class Compliant |
+| **Latency** | <1ms (64 samples @ 48kHz) |
+| **Format** | 14HP Eurorack |
+
+##### ES9Device.swift
+```swift
+class ES9Device: ObservableObject {
+    static let vendorID: UInt16 = 0x0483   // Expert Sleepers
+    static let productID: UInt16 = 0xA2D9  // ES-9
+    
+    // Device state
+    @Published var isConnected: Bool = false
+    @Published var sampleRate: ES9SampleRate = .rate48k
+    @Published var bufferSize: ES9BufferSize = .samples64
+    @Published var firmwareVersion: String = ""
+    
+    // Channel configuration (8+8 outputs, 4+2 inputs via main, +8+8 via ADAT)
+    @Published var outputChannels: [ES9OutputChannel] = []
+    @Published var inputChannels: [ES9InputChannel] = []
+    
+    // ADAT expansion
+    @Published var adatInputEnabled: Bool = false
+    @Published var adatOutputEnabled: Bool = false
+    @Published var adatDevice: String?  // ES-3, ES-6, etc.
+    
+    // Calibration
+    @Published var calibration: ES9Calibration
+    
+    // iOS/macOS compatibility
+    @Published var hostMode: ES9HostMode
+    
+    enum ES9SampleRate: Int, CaseIterable {
+        case rate44_1k = 44100
+        case rate48k = 48000
+        case rate88_2k = 88200
+        case rate96k = 96000
+        
+        var adatChannels: Int {
+            switch self {
+            case .rate44_1k, .rate48k: return 8
+            case .rate88_2k, .rate96k: return 4  // SMUX
+            }
+        }
+    }
+    
+    enum ES9BufferSize: Int, CaseIterable {
+        case samples32 = 32
+        case samples64 = 64
+        case samples128 = 128
+        case samples256 = 256
+        case samples512 = 512
+        
+        func latencyMs(at sampleRate: ES9SampleRate) -> Double {
+            return Double(self.rawValue) / Double(sampleRate.rawValue) * 1000.0
+        }
+    }
+    
+    enum ES9HostMode {
+        case macOS              // Full CoreAudio support
+        case iOS                // iOS/iPadOS support
+        case classCompliant     // Generic USB audio
+    }
+}
+```
+
+##### ES-9 Channel Mapping
+```swift
+struct ES9OutputChannel: Identifiable {
+    var id: Int                          // 1-16 (8 main + 8 ADAT)
+    var name: String
+    var type: ES9ChannelType
+    var jackNumber: Int?                 // Physical jack (1-8 for main)
+    var adatChannel: Int?                // ADAT channel (1-8)
+    
+    // CV configuration
+    var cvType: CVOutputType
+    var calibration: CVCalibration
+    var currentVoltage: Double = 0.0
+    
+    enum ES9ChannelType {
+        case mainDC              // Outputs 1-8: DC-coupled CV
+        case headphone           // Output 9-10: AC-coupled headphone
+        case adatOut             // ADAT outputs 1-8
+    }
+}
+
+struct ES9InputChannel: Identifiable {
+    var id: Int                          // 1-14 (4 CV + 2 line + 8 ADAT)
+    var name: String
+    var type: ES9InputType
+    var jackNumber: Int?                 // Physical jack
+    var adatChannel: Int?                // ADAT channel
+    
+    // CV configuration
+    var cvType: CVInputType?
+    var calibration: CVCalibration?
+    
+    enum ES9InputType {
+        case cvDC                // Inputs 1-4: DC-coupled CV
+        case lineAC              // Inputs 5-6: AC-coupled line
+        case adatIn              // ADAT inputs 1-8
+    }
+}
+
+// ES-9 Default Channel Layout
+let es9DefaultChannels = ES9ChannelLayout(
+    outputs: [
+        // Main DC-coupled outputs (±10V capable)
+        ES9OutputChannel(id: 1, name: "CV Out 1", type: .mainDC, jackNumber: 1, cvType: .pitch),
+        ES9OutputChannel(id: 2, name: "CV Out 2", type: .mainDC, jackNumber: 2, cvType: .gate),
+        ES9OutputChannel(id: 3, name: "CV Out 3", type: .mainDC, jackNumber: 3, cvType: .velocity),
+        ES9OutputChannel(id: 4, name: "CV Out 4", type: .mainDC, jackNumber: 4, cvType: .modulation),
+        ES9OutputChannel(id: 5, name: "CV Out 5", type: .mainDC, jackNumber: 5, cvType: .envelope),
+        ES9OutputChannel(id: 6, name: "CV Out 6", type: .mainDC, jackNumber: 6, cvType: .lfo),
+        ES9OutputChannel(id: 7, name: "CV Out 7", type: .mainDC, jackNumber: 7, cvType: .clock),
+        ES9OutputChannel(id: 8, name: "CV Out 8", type: .mainDC, jackNumber: 8, cvType: .modulation),
+        // Headphone (AC-coupled, not for CV)
+        ES9OutputChannel(id: 9, name: "Headphone L", type: .headphone, cvType: .audio),
+        ES9OutputChannel(id: 10, name: "Headphone R", type: .headphone, cvType: .audio),
+        // ADAT outputs (optional, for ES-3 expansion)
+        ES9OutputChannel(id: 11, name: "ADAT 1", type: .adatOut, adatChannel: 1, cvType: .pitch),
+        ES9OutputChannel(id: 12, name: "ADAT 2", type: .adatOut, adatChannel: 2, cvType: .gate),
+        ES9OutputChannel(id: 13, name: "ADAT 3", type: .adatOut, adatChannel: 3, cvType: .modulation),
+        ES9OutputChannel(id: 14, name: "ADAT 4", type: .adatOut, adatChannel: 4, cvType: .modulation),
+        ES9OutputChannel(id: 15, name: "ADAT 5", type: .adatOut, adatChannel: 5, cvType: .modulation),
+        ES9OutputChannel(id: 16, name: "ADAT 6", type: .adatOut, adatChannel: 6, cvType: .modulation),
+        ES9OutputChannel(id: 17, name: "ADAT 7", type: .adatOut, adatChannel: 7, cvType: .modulation),
+        ES9OutputChannel(id: 18, name: "ADAT 8", type: .adatOut, adatChannel: 8, cvType: .modulation),
+    ],
+    inputs: [
+        // DC-coupled CV inputs (±10V)
+        ES9InputChannel(id: 1, name: "CV In 1", type: .cvDC, jackNumber: 1),
+        ES9InputChannel(id: 2, name: "CV In 2", type: .cvDC, jackNumber: 2),
+        ES9InputChannel(id: 3, name: "CV In 3", type: .cvDC, jackNumber: 3),
+        ES9InputChannel(id: 4, name: "CV In 4", type: .cvDC, jackNumber: 4),
+        // AC-coupled line inputs
+        ES9InputChannel(id: 5, name: "Line In L", type: .lineAC, jackNumber: 5),
+        ES9InputChannel(id: 6, name: "Line In R", type: .lineAC, jackNumber: 6),
+        // ADAT inputs (for ES-6 expansion)
+        ES9InputChannel(id: 7, name: "ADAT In 1", type: .adatIn, adatChannel: 1),
+        ES9InputChannel(id: 8, name: "ADAT In 2", type: .adatIn, adatChannel: 2),
+        ES9InputChannel(id: 9, name: "ADAT In 3", type: .adatIn, adatChannel: 3),
+        ES9InputChannel(id: 10, name: "ADAT In 4", type: .adatIn, adatChannel: 4),
+        ES9InputChannel(id: 11, name: "ADAT In 5", type: .adatIn, adatChannel: 5),
+        ES9InputChannel(id: 12, name: "ADAT In 6", type: .adatIn, adatChannel: 6),
+        ES9InputChannel(id: 13, name: "ADAT In 7", type: .adatIn, adatChannel: 7),
+        ES9InputChannel(id: 14, name: "ADAT In 8", type: .adatIn, adatChannel: 8),
+    ]
+)
+```
+
+##### ES-9 Calibration System
+```swift
+struct ES9Calibration: Codable {
+    var deviceSerial: String             // Unikt per ES-9 enhet
+    var calibrationDate: Date
+    
+    // Per-output calibration
+    var outputCalibrations: [Int: ES9OutputCalibration]
+    
+    // Per-input calibration
+    var inputCalibrations: [Int: ES9InputCalibration]
+    
+    // Global offset (kompensera för DC drift)
+    var globalOffset: Double = 0.0
+}
+
+struct ES9OutputCalibration: Codable {
+    var channelId: Int
+    
+    // Voltage range (ES-9 stödjer ±10V)
+    var minVoltage: Double = -10.0
+    var maxVoltage: Double = +10.0
+    
+    // 1V/oct calibration
+    var octaveScale: Double = 1.0        // 1.0 = perfekt 1V/oct
+    var c0Voltage: Double = 0.0          // Spänning för C0 (MIDI 24)
+    
+    // Fine tuning per oktav (för extremt precis kalibrering)
+    var octaveOffsets: [Int: Double]?    // Oktav → offset i volt
+    
+    // DC offset kompensation
+    var dcOffset: Double = 0.0
+    
+    // Slew rate (ES-9 har hög slew rate, men kan behöva kompenseras)
+    var slewCompensation: Double = 0.0
+}
+
+struct ES9InputCalibration: Codable {
+    var channelId: Int
+    
+    // Input range (ES-9 hanterar ±10V)
+    var minVoltage: Double = -10.0
+    var maxVoltage: Double = +10.0
+    
+    // Gain/offset
+    var gain: Double = 1.0
+    var offset: Double = 0.0
+    
+    // Noise gate threshold
+    var noiseFloor: Double = 0.001       // Volt
+}
+```
+
+##### ES-9 Integration med CVEngine
+```swift
+extension CVEngine {
+    /// Konfigurera för ES-9
+    func configureForES9() throws {
+        guard let es9 = findES9Device() else {
+            throw CVEngineError.deviceNotFound("Expert Sleepers ES-9")
+        }
+        
+        // Sätt som primärt CV-gränssnitt
+        self.primaryDevice = es9
+        
+        // Konfigurera sample rate (48kHz rekommenderat för låg latens)
+        self.sampleRate = 48000
+        self.bufferSize = 64  // ~1.3ms latens
+        
+        // Mappa ES-9 kanaler till CV-system
+        for output in es9.outputChannels where output.type == .mainDC {
+            let cvOutput = CVOutput(
+                id: UUID(),
+                name: output.name,
+                audioChannel: output.id - 1,  // 0-indexed
+                type: output.cvType,
+                calibration: es9.calibration.outputCalibrations[output.id] ?? .default
+            )
+            self.cvOutputs.append(cvOutput)
+        }
+        
+        for input in es9.inputChannels where input.type == .cvDC {
+            let cvInput = CVInput(
+                id: UUID(),
+                name: input.name,
+                audioChannel: input.id - 1,
+                calibration: es9.calibration.inputCalibrations[input.id] ?? .default
+            )
+            self.cvInputs.append(cvInput)
+        }
+    }
+    
+    /// Auto-detect ES-9
+    func findES9Device() -> ES9Device? {
+        // Använd CoreAudio för att hitta ES-9
+        let devices = AudioDeviceManager.shared.availableDevices
+        return devices.first { device in
+            device.name.contains("ES-9") || 
+            (device.vendorID == ES9Device.vendorID && device.productID == ES9Device.productID)
+        }.map { ES9Device(from: $0) }
+    }
+}
+```
+
+##### ES-9 Presets (Vanliga Konfigurationer)
+```swift
+enum ES9Preset: String, CaseIterable {
+    case monoSynth = "Mono Synth"
+    case polySynth4Voice = "4-Voice Poly"
+    case drumMachine = "Drum Machine"
+    case modularSequencer = "Modular Sequencer"
+    case hybridDAW = "Hybrid DAW"
+    case mpeController = "MPE Controller"
+    
+    var channelAssignments: [ES9ChannelAssignment] {
+        switch self {
+        case .monoSynth:
+            return [
+                ES9ChannelAssignment(channel: 1, role: .pitch, description: "1V/oct Pitch"),
+                ES9ChannelAssignment(channel: 2, role: .gate, description: "Gate"),
+                ES9ChannelAssignment(channel: 3, role: .velocity, description: "Velocity"),
+                ES9ChannelAssignment(channel: 4, role: .modWheel, description: "Mod Wheel"),
+                ES9ChannelAssignment(channel: 5, role: .envelope, description: "Filter Env"),
+                ES9ChannelAssignment(channel: 6, role: .lfo, description: "LFO"),
+                ES9ChannelAssignment(channel: 7, role: .clock, description: "Clock"),
+                ES9ChannelAssignment(channel: 8, role: .reset, description: "Reset"),
+            ]
+            
+        case .polySynth4Voice:
+            return [
+                // Voice 1
+                ES9ChannelAssignment(channel: 1, role: .pitch, description: "Voice 1 Pitch"),
+                ES9ChannelAssignment(channel: 2, role: .gate, description: "Voice 1 Gate"),
+                // Voice 2
+                ES9ChannelAssignment(channel: 3, role: .pitch, description: "Voice 2 Pitch"),
+                ES9ChannelAssignment(channel: 4, role: .gate, description: "Voice 2 Gate"),
+                // Voice 3
+                ES9ChannelAssignment(channel: 5, role: .pitch, description: "Voice 3 Pitch"),
+                ES9ChannelAssignment(channel: 6, role: .gate, description: "Voice 3 Gate"),
+                // Voice 4
+                ES9ChannelAssignment(channel: 7, role: .pitch, description: "Voice 4 Pitch"),
+                ES9ChannelAssignment(channel: 8, role: .gate, description: "Voice 4 Gate"),
+            ]
+            
+        case .drumMachine:
+            return [
+                ES9ChannelAssignment(channel: 1, role: .trigger, description: "Kick"),
+                ES9ChannelAssignment(channel: 2, role: .trigger, description: "Snare"),
+                ES9ChannelAssignment(channel: 3, role: .trigger, description: "Hi-Hat"),
+                ES9ChannelAssignment(channel: 4, role: .trigger, description: "Clap"),
+                ES9ChannelAssignment(channel: 5, role: .trigger, description: "Tom 1"),
+                ES9ChannelAssignment(channel: 6, role: .trigger, description: "Tom 2"),
+                ES9ChannelAssignment(channel: 7, role: .clock, description: "Clock"),
+                ES9ChannelAssignment(channel: 8, role: .accent, description: "Accent"),
+            ]
+            
+        case .modularSequencer:
+            return [
+                ES9ChannelAssignment(channel: 1, role: .pitch, description: "Seq Pitch"),
+                ES9ChannelAssignment(channel: 2, role: .gate, description: "Seq Gate"),
+                ES9ChannelAssignment(channel: 3, role: .modulation, description: "Mod 1 (steps)"),
+                ES9ChannelAssignment(channel: 4, role: .modulation, description: "Mod 2 (LFO)"),
+                ES9ChannelAssignment(channel: 5, role: .modulation, description: "Mod 3 (env)"),
+                ES9ChannelAssignment(channel: 6, role: .modulation, description: "Mod 4 (random)"),
+                ES9ChannelAssignment(channel: 7, role: .clock, description: "Clock Out"),
+                ES9ChannelAssignment(channel: 8, role: .reset, description: "Reset Out"),
+            ]
+            
+        case .hybridDAW:
+            return [
+                ES9ChannelAssignment(channel: 1, role: .pitch, description: "To Eurorack"),
+                ES9ChannelAssignment(channel: 2, role: .gate, description: "To Eurorack"),
+                ES9ChannelAssignment(channel: 3, role: .modulation, description: "LFO Out"),
+                ES9ChannelAssignment(channel: 4, role: .modulation, description: "Env Out"),
+                ES9ChannelAssignment(channel: 5, role: .clock, description: "Clock to Modular"),
+                ES9ChannelAssignment(channel: 6, role: .reset, description: "Reset to Modular"),
+                ES9ChannelAssignment(channel: 7, role: .modulation, description: "Automation CV"),
+                ES9ChannelAssignment(channel: 8, role: .modulation, description: "Sidechain CV"),
+            ]
+            
+        case .mpeController:
+            return [
+                // 4-voice MPE
+                ES9ChannelAssignment(channel: 1, role: .pitch, description: "MPE V1 Pitch"),
+                ES9ChannelAssignment(channel: 2, role: .pressure, description: "MPE V1 Pressure"),
+                ES9ChannelAssignment(channel: 3, role: .pitch, description: "MPE V2 Pitch"),
+                ES9ChannelAssignment(channel: 4, role: .pressure, description: "MPE V2 Pressure"),
+                ES9ChannelAssignment(channel: 5, role: .pitch, description: "MPE V3 Pitch"),
+                ES9ChannelAssignment(channel: 6, role: .pressure, description: "MPE V3 Pressure"),
+                ES9ChannelAssignment(channel: 7, role: .pitch, description: "MPE V4 Pitch"),
+                ES9ChannelAssignment(channel: 8, role: .pressure, description: "MPE V4 Pressure"),
+            ]
+        }
+    }
+}
+
+struct ES9ChannelAssignment {
+    var channel: Int
+    var role: ChannelRole
+    var description: String
+    
+    enum ChannelRole {
+        case pitch, gate, velocity, modWheel, envelope, lfo
+        case clock, reset, trigger, accent, modulation
+        case pressure, slide
+    }
+}
+```
+
+##### ES-9 + ADAT Expansion
+```swift
+struct ES9Expansion {
+    /// ES-3 via ADAT Out (8 extra CV outputs)
+    struct ES3Expansion {
+        var enabled: Bool = false
+        var adatOutputs: [ES9OutputChannel] = []  // 8 DC-coupled outputs
+        
+        // ES-3 kräver ADAT från ES-9
+        // Vid 96kHz: 4 kanaler (SMUX)
+        // Vid 48kHz: 8 kanaler
+    }
+    
+    /// ES-6 via ADAT In (8 extra CV inputs)
+    struct ES6Expansion {
+        var enabled: Bool = false
+        var adatInputs: [ES9InputChannel] = []  // 8 DC-coupled inputs
+        
+        // ES-6 skickar ADAT till ES-9
+        // Ger totalt 4+8 = 12 CV inputs
+    }
+    
+    /// ES-5 (SPDIF expansion för extra channels)
+    struct ES5Expansion {
+        var enabled: Bool = false
+        // ES-5 behöver ES-3 för att fungera (daisy chain)
+    }
+}
+
+// Med full ES-9 + ES-3 + ES-6 expansion:
+// CV Outputs: 8 (ES-9) + 8 (ES-3 via ADAT) = 16 CV outputs
+// CV Inputs:  4 (ES-9) + 8 (ES-6 via ADAT) = 12 CV inputs
+```
+
+##### ES-9 UI Configuration
+```swift
+struct ES9ConfigView: View {
+    @ObservedObject var es9: ES9Device
+    @ObservedObject var cvEngine: CVEngine
+    
+    var body: some View {
+        Form {
+            Section("Device Status") {
+                HStack {
+                    Circle()
+                        .fill(es9.isConnected ? Color.green : Color.red)
+                        .frame(width: 12, height: 12)
+                    Text(es9.isConnected ? "ES-9 Connected" : "ES-9 Not Found")
+                }
+                
+                if es9.isConnected {
+                    Text("Firmware: \(es9.firmwareVersion)")
+                    Text("Serial: \(es9.calibration.deviceSerial)")
+                }
+            }
+            
+            Section("Audio Settings") {
+                Picker("Sample Rate", selection: $es9.sampleRate) {
+                    ForEach(ES9Device.ES9SampleRate.allCases, id: \.self) { rate in
+                        Text("\(rate.rawValue / 1000) kHz").tag(rate)
+                    }
+                }
+                
+                Picker("Buffer Size", selection: $es9.bufferSize) {
+                    ForEach(ES9Device.ES9BufferSize.allCases, id: \.self) { size in
+                        let latency = size.latencyMs(at: es9.sampleRate)
+                        Text("\(size.rawValue) samples (\(String(format: "%.1f", latency))ms)")
+                            .tag(size)
+                    }
+                }
+            }
+            
+            Section("Preset") {
+                Picker("Configuration", selection: $selectedPreset) {
+                    ForEach(ES9Preset.allCases, id: \.self) { preset in
+                        Text(preset.rawValue).tag(preset)
+                    }
+                }
+                
+                Button("Apply Preset") {
+                    applyPreset(selectedPreset)
+                }
+            }
+            
+            Section("CV Outputs (1-8)") {
+                ForEach(es9.outputChannels.filter { $0.type == .mainDC }) { channel in
+                    ES9ChannelRow(channel: channel)
+                }
+            }
+            
+            Section("CV Inputs (1-4)") {
+                ForEach(es9.inputChannels.filter { $0.type == .cvDC }) { channel in
+                    ES9InputRow(channel: channel)
+                }
+            }
+            
+            Section("ADAT Expansion") {
+                Toggle("Enable ADAT Output (ES-3)", isOn: $es9.adatOutputEnabled)
+                Toggle("Enable ADAT Input (ES-6)", isOn: $es9.adatInputEnabled)
+                
+                if es9.adatOutputEnabled {
+                    Text("ADAT channels at \(es9.sampleRate.adatChannels) ch")
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Section("Calibration") {
+                NavigationLink("Calibrate Outputs") {
+                    ES9CalibrationView(es9: es9, mode: .output)
+                }
+                NavigationLink("Calibrate Inputs") {
+                    ES9CalibrationView(es9: es9, mode: .input)
+                }
+                
+                Button("Reset to Factory Calibration") {
+                    es9.calibration = .factory
+                }
+            }
+        }
+        .navigationTitle("Expert Sleepers ES-9")
+    }
+}
+```
+
+---
+
+#### 3C.11 Stödda Hardware (Komplett)
+
+| Gränssnitt | CV Out | CV In | ADAT | Protokoll | Latens | Primärt Stöd |
+|------------|--------|-------|------|-----------|--------|--------------|
+| **Expert Sleepers ES-9** | **8** | **4** | **8+8** | **USB** | **<1ms** | **✅ Full** |
+| Expert Sleepers ES-8 | 8 | 4 | - | USB | <1ms | ✅ |
+| Expert Sleepers ES-3 | 8 | - | ADAT | ADAT | <2ms | ✅ (via ES-9) |
+| Expert Sleepers ES-6 | - | 8 | ADAT | ADAT | <2ms | ✅ (via ES-9) |
+| MOTU UltraLite mk5 | 10 | 2 | - | USB | <1ms | ⚠️ |
+| MOTU 828es | 28 | 28 | 16 | USB/TB | <1ms | ⚠️ |
+| RME Fireface UCX II | 8 | 8 | 8 | USB | <1ms | ⚠️ |
+| Befaco VCMC | 8 | - | - | USB MIDI | <3ms | ⚠️ |
+| Endorphin.es Shuttle Control | 16 | - | - | USB | <1ms | ⚠️ |
+| Intellijel Audio Interface II | 4 | 4 | - | USB | <1ms | ⚠️ |
+
+**Legenda:** ✅ Full integration | ⚠️ Basic support
 
 ---
 
@@ -2453,7 +2958,13 @@ struct PatternBrowserView: View {
 - [ ] Portamento/Glide
 - [ ] Multi-kanal CV output (upp till 16)
 
-### Sprint 4B (Vecka 8-9): HW CV Devices
+### Sprint 4B (Vecka 8-9): HW CV Devices & ES-9 Integration
+- [ ] **ES-9 Device Driver** - Auto-detect, USB communication
+- [ ] **ES-9 Channel Mapping** - 8 outputs, 4 inputs, ADAT expansion
+- [ ] **ES-9 Calibration System** - Per-kanal 1V/oct kalibrering
+- [ ] **ES-9 Presets** - Mono Synth, 4-Voice, Drum Machine, Sequencer, MPE
+- [ ] **ES-9 ADAT Support** - ES-3 output expansion, ES-6 input expansion
+- [ ] **ES-9 Configuration UI** - Sample rate, buffer, channel assignment
 - [ ] HWCVInstrument - komplett instrument-interface
 - [ ] HWCVClock - analog clock med divisioner/multipliers
 - [ ] HWCVOut - generisk CV-utgång med routing
@@ -2668,6 +3179,17 @@ dependencies: [
 60. **Hybrid Modular+DAW** - Eurorack LFO → DAW automation, DAW env → Eurorack
 61. **CV Generativ Musik** - Chaos-baserad sequencing, Turing patterns
 62. **CV Feedback Loops** - Självmodulerande system, complex oscillation
+
+### Expert Sleepers ES-9 Integration (Primärt stöd):
+
+63. **ES-9 Auto-detect** - Automatisk identifiering av ES-9 via USB
+64. **ES-9 8 CV Outputs** - Full DC-kopplade ±10V utgångar
+65. **ES-9 4 CV Inputs** - DC-kopplade ingångar med signal conditioning
+66. **ES-9 ADAT Expansion** - Stöd för ES-3 (8 ut) och ES-6 (8 in) via ADAT
+67. **ES-9 Calibration** - Per-kanal kalibrering med 1V/oct precision
+68. **ES-9 Presets** - Mono Synth, 4-Voice Poly, Drum Machine, Modular Sequencer, MPE
+69. **ES-9 Low Latency** - 64 samples @ 48kHz = ~1.3ms latens
+70. **ES-9 iOS/macOS** - Full Class Compliant USB-stöd för båda plattformar
 
 ### Drum Machine MIDI Maps:
 
