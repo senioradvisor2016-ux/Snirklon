@@ -6878,4 +6878,541 @@ extension Color {
 
 ---
 
+### D.8 Vintage Voltage Färgpalett (Retro-Futuristic Darkwave)
+
+> Färger hämtade från [Vintage Voltage](https://retro-pulse-forge.lovable.app) - Swedish Retro-Futuristic Synthpop
+
+#### Primär Palett
+
+| Namn | HEX | RGB | Användning |
+|------|-----|-----|------------|
+| **Void Black** | `#0A0A0A` | rgb(10, 10, 10) | Huvudbakgrund |
+| **Shadow Charcoal** | `#1A1A1A` | rgb(26, 26, 26) | Sekundär bakgrund, panels |
+| **Graphite** | `#2A2A2A` | rgb(42, 42, 42) | Bakgrundsmönster, inaktiva element |
+| **Steel Gray** | `#4A4A4A` | rgb(74, 74, 74) | Borders, dividers |
+| **Ghost White** | `#F5F5F5` | rgb(245, 245, 245) | Primär text, headings |
+| **Mist** | `#B0B0B0` | rgb(176, 176, 176) | Sekundär text |
+
+#### Accent-färger
+
+| Namn | HEX | RGB | Användning |
+|------|-----|-----|------------|
+| **Neon Magenta** | `#E91E8C` | rgb(233, 30, 140) | Primär accent, CTA, active states |
+| **Hot Pink** | `#FF4DA6` | rgb(255, 77, 166) | Hover states, highlights |
+| **Electric Violet** | `#8B5CF6` | rgb(139, 92, 246) | Sekundär accent, glows |
+| **Deep Purple** | `#5B21B6` | rgb(91, 33, 182) | Gradient stops, shadows |
+| **Vintage Rose** | `#C84B8A` | rgb(200, 75, 138) | Muted accent |
+
+#### Gradient-definitioner
+
+```swift
+extension LinearGradient {
+    /// Hero-sektion bakgrund - subtil lila glow i center
+    static let vintageVoidGradient = LinearGradient(
+        colors: [
+            Color(hex: "0A0A0A"),
+            Color(hex: "1A0A1A"),  // Hint of purple
+            Color(hex: "0A0A0A")
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    /// Magenta accent glow
+    static let magentaGlow = LinearGradient(
+        colors: [
+            Color(hex: "E91E8C").opacity(0.8),
+            Color(hex: "8B5CF6").opacity(0.4)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    /// Button border gradient
+    static let glassBorder = LinearGradient(
+        colors: [
+            Color(hex: "E91E8C").opacity(0.6),
+            Color(hex: "8B5CF6").opacity(0.3),
+            Color(hex: "E91E8C").opacity(0.6)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    /// Vertical center glow (hero-stil)
+    static let centerGlow = RadialGradient(
+        colors: [
+            Color(hex: "5B21B6").opacity(0.3),
+            Color.clear
+        ],
+        center: .center,
+        startRadius: 0,
+        endRadius: 400
+    )
+}
+```
+
+#### SwiftUI Color Extension
+
+```swift
+extension Color {
+    // === VINTAGE VOLTAGE PALETTE ===
+    
+    // Bakgrunder
+    static let voidBlack = Color(hex: "0A0A0A")
+    static let shadowCharcoal = Color(hex: "1A1A1A")
+    static let graphite = Color(hex: "2A2A2A")
+    static let steelGray = Color(hex: "4A4A4A")
+    
+    // Text
+    static let ghostWhite = Color(hex: "F5F5F5")
+    static let mist = Color(hex: "B0B0B0")
+    
+    // Accenter
+    static let neonMagenta = Color(hex: "E91E8C")
+    static let hotPink = Color(hex: "FF4DA6")
+    static let electricViolet = Color(hex: "8B5CF6")
+    static let deepPurple = Color(hex: "5B21B6")
+    static let vintageRose = Color(hex: "C84B8A")
+    
+    // Hex initializer
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}
+```
+
+---
+
+### D.9 Vintage Voltage UI-komponenter
+
+#### Glasig Button (Vintage Voltage-stil)
+
+```swift
+/// Button med magenta glass-border (Vintage Voltage-stil)
+struct VintageVoltageButton: View {
+    let title: String
+    let icon: String?
+    let isPrimary: Bool
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    @State private var isPressed = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 14))
+                }
+                
+                Text(title.uppercased())
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .tracking(2)
+            }
+            .foregroundColor(isPrimary ? .ghostWhite : .mist)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(
+                ZStack {
+                    // Bakgrund
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isPrimary ? Color.graphite : Color.clear)
+                    
+                    // Glasig border med gradient
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.neonMagenta.opacity(isHovered ? 0.8 : 0.5),
+                                    Color.electricViolet.opacity(isHovered ? 0.5 : 0.2),
+                                    Color.neonMagenta.opacity(isHovered ? 0.8 : 0.5)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    
+                    // Hover glow
+                    if isHovered {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.neonMagenta, lineWidth: 1)
+                            .blur(radius: 4)
+                    }
+                }
+            )
+            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .animation(.easeOut(duration: 0.1), value: isPressed)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+    }
+}
+```
+
+#### Step Cell (Vintage Voltage-tema)
+
+```swift
+/// StepCell med Vintage Voltage färgschema
+struct VintageVoltageStepCell: View {
+    let step: StepModel
+    let isPlaying: Bool
+    let isSelected: Bool
+    
+    var body: some View {
+        ZStack {
+            // Bakgrund
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.shadowCharcoal)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.steelGray.opacity(0.5), lineWidth: 0.5)
+                )
+            
+            // Aktiv step
+            if step.enabled {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                velocityColor.opacity(0.7),
+                                velocityColor.opacity(0.3)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .padding(2)
+                
+                // Glow för höga velocities
+                if (step.velocity ?? 100) > 100 {
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(velocityColor, lineWidth: 1)
+                        .blur(radius: 3)
+                        .padding(2)
+                }
+            }
+            
+            // Playing indicator - neon magenta puls
+            if isPlaying {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.neonMagenta, lineWidth: 2)
+                    .shadow(color: .neonMagenta, radius: 8)
+            }
+            
+            // Selection - electric violet
+            if isSelected {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.electricViolet, lineWidth: 2)
+            }
+            
+            // Condition badge
+            if step.condition != .always {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text(step.condition.shortName)
+                            .font(.system(size: 7, weight: .bold, design: .monospaced))
+                            .foregroundColor(.hotPink)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Color.deepPurple.opacity(0.8))
+                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                    }
+                    Spacer()
+                }
+                .padding(2)
+            }
+        }
+        .frame(width: 40, height: 40)
+    }
+    
+    private var velocityColor: Color {
+        let v = Double(step.velocity ?? 100) / 127.0
+        // Interpolera från violet till magenta baserat på velocity
+        return Color(
+            red: 0.55 + (v * 0.36),   // 139 → 233
+            green: 0.12 + (v * 0.0),   // 30 → 30
+            blue: 0.96 - (v * 0.41)    // 246 → 140
+        )
+    }
+}
+```
+
+#### Transport Bar (Vintage Voltage)
+
+```swift
+struct VintageVoltageTransportBar: View {
+    @ObservedObject var engine: SequencerEngine
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            // Play/Stop
+            TransportButton(
+                icon: engine.isPlaying ? "stop.fill" : "play.fill",
+                isActive: engine.isPlaying,
+                activeColor: .neonMagenta
+            ) {
+                engine.togglePlayback()
+            }
+            
+            // Record
+            TransportButton(
+                icon: "record.circle.fill",
+                isActive: engine.isRecording,
+                activeColor: .hotPink
+            ) {
+                engine.toggleRecording()
+            }
+            
+            // Divider
+            Rectangle()
+                .fill(Color.steelGray)
+                .frame(width: 1, height: 32)
+            
+            // BPM Display
+            VStack(spacing: 2) {
+                Text(String(format: "%.1f", engine.tempo))
+                    .font(.system(size: 28, weight: .light, design: .monospaced))
+                    .foregroundColor(.ghostWhite)
+                
+                Text("BPM")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(.mist)
+                    .tracking(2)
+            }
+            .frame(width: 100)
+            
+            // Divider
+            Rectangle()
+                .fill(Color.steelGray)
+                .frame(width: 1, height: 32)
+            
+            // Position
+            HStack(spacing: 4) {
+                PositionDigit(value: engine.currentBar + 1, label: "BAR")
+                Text(".")
+                    .foregroundColor(.steelGray)
+                PositionDigit(value: engine.currentBeat + 1, label: "BEAT")
+                Text(".")
+                    .foregroundColor(.steelGray)
+                PositionDigit(value: engine.currentTick, label: "TICK", width: 40)
+            }
+            
+            Spacer()
+            
+            // Link status
+            if let link = engine.linkSession {
+                LinkIndicator(
+                    isEnabled: link.isEnabled,
+                    peers: link.numPeers
+                )
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .background(Color.shadowCharcoal)
+        .overlay(
+            // Top magenta glow line
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.clear,
+                            Color.neonMagenta.opacity(0.3),
+                            Color.clear
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+}
+
+struct TransportButton: View {
+    let icon: String
+    let isActive: Bool
+    let activeColor: Color
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(isActive ? activeColor : .mist)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(Color.graphite)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isActive ? activeColor.opacity(0.5) : Color.steelGray,
+                                    lineWidth: 1
+                                )
+                        )
+                )
+                .shadow(color: isActive ? activeColor.opacity(0.5) : .clear, radius: 8)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
+    }
+}
+
+struct PositionDigit: View {
+    let value: Int
+    let label: String
+    var width: CGFloat = 30
+    
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(String(format: "%02d", value))
+                .font(.system(size: 20, weight: .light, design: .monospaced))
+                .foregroundColor(.ghostWhite)
+            
+            Text(label)
+                .font(.system(size: 7, weight: .medium, design: .monospaced))
+                .foregroundColor(.mist)
+                .tracking(1)
+        }
+        .frame(width: width)
+    }
+}
+```
+
+---
+
+### D.10 Komplett Tema: Snirklon × Vintage Voltage
+
+```swift
+/// Komplett tema-konfiguration
+struct SnirklonTheme {
+    // === BAKGRUNDER ===
+    let background = Color.voidBlack
+    let panelBackground = Color.shadowCharcoal
+    let controlBackground = Color.graphite
+    
+    // === TEXT ===
+    let primaryText = Color.ghostWhite
+    let secondaryText = Color.mist
+    let accentText = Color.neonMagenta
+    
+    // === BORDERS ===
+    let border = Color.steelGray
+    let activeBorder = Color.neonMagenta
+    let selectedBorder = Color.electricViolet
+    
+    // === STATUS ===
+    let playing = Color.neonMagenta
+    let recording = Color.hotPink
+    let queued = Color.electricViolet
+    let muted = Color.mist.opacity(0.5)
+    
+    // === STEP COLORS ===
+    func stepColor(velocity: Int, enabled: Bool) -> Color {
+        guard enabled else { return .graphite }
+        let v = Double(velocity) / 127.0
+        return Color(
+            red: 0.55 + (v * 0.36),
+            green: 0.12,
+            blue: 0.96 - (v * 0.41)
+        )
+    }
+    
+    // === TRACK COLORS ===
+    let trackColors: [Color] = [
+        Color(hex: "E91E8C"),  // Magenta
+        Color(hex: "8B5CF6"),  // Violet
+        Color(hex: "06B6D4"),  // Cyan
+        Color(hex: "10B981"),  // Emerald
+        Color(hex: "F59E0B"),  // Amber
+        Color(hex: "EF4444"),  // Red
+        Color(hex: "EC4899"),  // Pink
+        Color(hex: "6366F1"),  // Indigo
+    ]
+    
+    // === FONTS ===
+    static func heading(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .light, design: .default)
+    }
+    
+    static func mono(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium, design: .monospaced)
+    }
+    
+    static func label(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium, design: .monospaced)
+    }
+}
+
+// Global instance
+let theme = SnirklonTheme()
+```
+
+#### CSS-variabler (för ev. web-UI)
+
+```css
+:root {
+  /* Bakgrunder */
+  --void-black: #0A0A0A;
+  --shadow-charcoal: #1A1A1A;
+  --graphite: #2A2A2A;
+  --steel-gray: #4A4A4A;
+  
+  /* Text */
+  --ghost-white: #F5F5F5;
+  --mist: #B0B0B0;
+  
+  /* Accenter */
+  --neon-magenta: #E91E8C;
+  --hot-pink: #FF4DA6;
+  --electric-violet: #8B5CF6;
+  --deep-purple: #5B21B6;
+  --vintage-rose: #C84B8A;
+  
+  /* Shadows */
+  --glow-magenta: 0 0 20px rgba(233, 30, 140, 0.4);
+  --glow-violet: 0 0 20px rgba(139, 92, 246, 0.4);
+  
+  /* Gradients */
+  --gradient-magenta: linear-gradient(135deg, #E91E8C, #8B5CF6);
+  --gradient-void: radial-gradient(circle at 50% 50%, #1A0A1A, #0A0A0A);
+}
+
+---
+
 *Senast uppdaterad: December 2024*
