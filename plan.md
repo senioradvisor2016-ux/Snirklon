@@ -3408,4 +3408,1406 @@ Följande saknas i README.md:
 
 ---
 
+## Appendix B: Kritisk Implementation - Komplett Kod
+
+### B.1 CoreMIDI Implementation (Ersätter Timer)
+
+#### MIDIEngine.swift - Komplett implementation
+```swift
+import Foundation
+import CoreMIDI
+import AudioToolbox
+
+/// Professionell MIDI Engine med högprecisionstiming
+class MIDIEngine: ObservableObject {
+    
+    // MARK: - CoreMIDI References
+    private var midiClient: MIDIClientRef = 0
+    private var outputPort: MIDIPortRef = 0
+    private var inputPort: MIDIPortRef = 0
+    private var virtualSource: MIDIEndpointRef = 0
+    private var virtualDestination: MIDIEndpointRef = 0
+    
+    // MARK: - State
+    @Published var isInitialized: Bool = false
+    @Published var availableDestinations: [MIDIDestination] = []
+    @Published var availableSources: [MIDISource] = []
+    @Published var selectedDestinations: Set<MIDIDestination> = []
+    
+    // MARK: - Timing
+    private var hostTimeBase: mach_timebase_info_data_t = mach_timebase_info_data_t()
+    
+    // MARK: - Initialization
+    
+    init() {
+        mach_timebase_info(&hostTimeBase)
+    }
+    
+    func setup() throws {
+        // Skapa MIDI Client
+        var status = MIDIClientCreateWithBlock("Snirklon" as CFString, &midiClient) { [weak self] notification in
+            self?.handleMIDINotification(notification)
+        }
+        guard status == noErr else {
+            throw MIDIEngineError.clientCreationFailed(status)
+        }
+        
+        // Skapa Output Port
+        status = MIDIOutputPortCreate(midiClient, "Snirklon Output" as CFString, &outputPort)
+        guard status == noErr else {
+            throw MIDIEngineError.outputPortCreationFailed(status)
+        }
+        
+        // Skapa Input Port
+        status = MIDIInputPortCreateWithProtocol(
+            midiClient,
+            "Snirklon Input" as CFString,
+            ._1_0,
+            &inputPort
+        ) { [weak self] eventList, srcConnRefCon in
+            self?.handleMIDIInput(eventList)
+        }
+        guard status == noErr else {
+            throw MIDIEngineError.inputPortCreationFailed(status)
+        }
+        
+        // Skapa Virtual Source (för att skicka MIDI till andra appar)
+        status = MIDISourceCreateWithProtocol(
+            midiClient,
+            "Snirklon Virtual" as CFString,
+            ._1_0,
+            &virtualSource
+        )
+        
+        // Skanna tillgängliga enheter
+        refreshDevices()
+        
+        isInitialized = true
+    }
+    
+    // MARK: - Device Management
+    
+    func refreshDevices() {
+        availableDestinations = (0..<MIDIGetNumberOfDestinations()).compactMap { index in
+            let endpoint = MIDIGetDestination(index)
+            return MIDIDestination(endpoint: endpoint)
+        }
+        
+        availableSources = (0..<MIDIGetNumberOfSources()).compactMap { index in
+            let endpoint = MIDIGetSource(index)
+            return MIDISource(endpoint: endpoint)
+        }
+    }
+    
+    // MARK: - Sending MIDI
+    
+    /// Skicka Note On
+    func sendNoteOn(
+        channel: UInt8,
+        note: UInt8,
+        velocity: UInt8,
+        timestamp: MIDITimeStamp = 0
+    ) {
+        let message: [UInt8] = [0x90 | (channel & 0x0F), note & 0x7F, velocity & 0x7F]
+        sendMessage(message, timestamp: timestamp)
+    }
+    
+    /// Skicka Note Off
+    func sendNoteOff(
+        channel: UInt8,
+        note: UInt8,
+        velocity: UInt8 = 0,
+        timestamp: MIDITimeStamp = 0
+    ) {
+        let message: [UInt8] = [0x80 | (channel & 0x0F), note & 0x7F, velocity & 0x7F]
+        sendMessage(message, timestamp: timestamp)
+    }
+    
+    /// Skicka Control Change
+    func sendCC(
+        channel: UInt8,
+        controller: UInt8,
+        value: UInt8,
+        timestamp: MIDITimeStamp = 0
+    ) {
+        let message: [UInt8] = [0xB0 | (channel & 0x0F), controller & 0x7F, value & 0x7F]
+        sendMessage(message, timestamp: timestamp)
+    }
+    
+    /// Skicka Program Change
+    func sendProgramChange(
+        channel: UInt8,
+        program: UInt8,
+        timestamp: MIDITimeStamp = 0
+    ) {
+        let message: [UInt8] = [0xC0 | (channel & 0x0F), program & 0x7F]
+        sendMessage(message, timestamp: timestamp)
+    }
+    
+    /// Skicka Pitch Bend
+    func sendPitchBend(
+        channel: UInt8,
+        value: UInt16,  // 0-16383, 8192 = center
+        timestamp: MIDITimeStamp = 0
+    ) {
+        let lsb = UInt8(value & 0x7F)
+        let msb = UInt8((value >> 7) & 0x7F)
+        let message: [UInt8] = [0xE0 | (channel & 0x0F), lsb, msb]
+        sendMessage(message, timestamp: timestamp)
+    }
+    
+    /// Skicka MIDI Clock
+    func sendClock(timestamp: MIDITimeStamp = 0) {
+        sendMessage([0xF8], timestamp: timestamp)
+    }
+    
+    /// Skicka Start
+    func sendStart(timestamp: MIDITimeStamp = 0) {
+        sendMessage([0xFA], timestamp: timestamp)
+    }
+    
+    /// Skicka Stop
+    func sendStop(timestamp: MIDITimeStamp = 0) {
+        sendMessage([0xFC], timestamp: timestamp)
+    }
+    
+    /// Skicka Continue
+    func sendContinue(timestamp: MIDITimeStamp = 0) {
+        sendMessage([0xFB], timestamp: timestamp)
+    }
+    
+    /// Skicka Song Position Pointer
+    func sendSongPosition(_ position: UInt16, timestamp: MIDITimeStamp = 0) {
+        let lsb = UInt8(position & 0x7F)
+        let msb = UInt8((position >> 7) & 0x7F)
+        sendMessage([0xF2, lsb, msb], timestamp: timestamp)
+    }
+    
+    // MARK: - Low-level Send
+    
+    private func sendMessage(_ bytes: [UInt8], timestamp: MIDITimeStamp) {
+        var packetList = MIDIPacketList()
+        var packet = MIDIPacketListInit(&packetList)
+        packet = MIDIPacketListAdd(&packetList, 1024, packet, timestamp, bytes.count, bytes)
+        
+        // Skicka till alla valda destinations
+        for destination in selectedDestinations {
+            MIDISend(outputPort, destination.endpoint, &packetList)
+        }
+        
+        // Skicka via virtual source
+        if virtualSource != 0 {
+            MIDIReceived(virtualSource, &packetList)
+        }
+    }
+    
+    // MARK: - Timing Utilities
+    
+    /// Konvertera nanosekunder till MIDITimeStamp
+    func nanosToTimestamp(_ nanos: UInt64) -> MIDITimeStamp {
+        return nanos * UInt64(hostTimeBase.denom) / UInt64(hostTimeBase.numer)
+    }
+    
+    /// Konvertera MIDITimeStamp till nanosekunder
+    func timestampToNanos(_ timestamp: MIDITimeStamp) -> UInt64 {
+        return timestamp * UInt64(hostTimeBase.numer) / UInt64(hostTimeBase.denom)
+    }
+    
+    /// Nuvarande host time
+    var currentTimestamp: MIDITimeStamp {
+        return mach_absolute_time()
+    }
+    
+    /// Timestamp för X millisekunder i framtiden
+    func timestampAfter(milliseconds: Double) -> MIDITimeStamp {
+        let nanos = UInt64(milliseconds * 1_000_000)
+        return currentTimestamp + nanosToTimestamp(nanos)
+    }
+    
+    // MARK: - Notification Handling
+    
+    private func handleMIDINotification(_ notification: UnsafePointer<MIDINotification>) {
+        switch notification.pointee.messageID {
+        case .msgSetupChanged:
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshDevices()
+            }
+        default:
+            break
+        }
+    }
+    
+    private func handleMIDIInput(_ eventList: UnsafePointer<MIDIEventList>) {
+        // Hantera inkommande MIDI
+        // Implementera efter behov
+    }
+    
+    // MARK: - Cleanup
+    
+    deinit {
+        if midiClient != 0 {
+            MIDIClientDispose(midiClient)
+        }
+    }
+}
+
+// MARK: - Supporting Types
+
+struct MIDIDestination: Identifiable, Hashable {
+    let id: UUID = UUID()
+    let endpoint: MIDIEndpointRef
+    var name: String {
+        var cfName: Unmanaged<CFString>?
+        MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &cfName)
+        return cfName?.takeRetainedValue() as String? ?? "Unknown"
+    }
+}
+
+struct MIDISource: Identifiable, Hashable {
+    let id: UUID = UUID()
+    let endpoint: MIDIEndpointRef
+    var name: String {
+        var cfName: Unmanaged<CFString>?
+        MIDIObjectGetStringProperty(endpoint, kMIDIPropertyName, &cfName)
+        return cfName?.takeRetainedValue() as String? ?? "Unknown"
+    }
+}
+
+enum MIDIEngineError: Error {
+    case clientCreationFailed(OSStatus)
+    case outputPortCreationFailed(OSStatus)
+    case inputPortCreationFailed(OSStatus)
+}
+```
+
+#### HighPrecisionClock.swift - Ersätter Timer
+```swift
+import Foundation
+import AudioToolbox
+import AVFoundation
+
+/// Högprecisionstimer baserad på AudioUnit för sample-accurate timing
+class HighPrecisionClock: ObservableObject {
+    
+    // MARK: - State
+    @Published var isRunning: Bool = false
+    @Published var tempo: Double = 120.0 {
+        didSet { updateTickInterval() }
+    }
+    @Published var currentTick: Int = 0
+    @Published var currentBeat: Int = 0
+    @Published var currentBar: Int = 0
+    
+    // MARK: - Configuration
+    let ppqn: Int = 96  // Pulses per quarter note (Cirklon standard)
+    
+    // MARK: - Audio Unit
+    private var audioUnit: AudioUnit?
+    private var tickInterval: Double = 0  // Sekunder per tick
+    private var sampleRate: Double = 48000
+    private var samplesPerTick: Double = 0
+    private var sampleCounter: Double = 0
+    
+    // MARK: - Callbacks
+    var tickCallback: ((Int) -> Void)?
+    var beatCallback: ((Int, Int) -> Void)?  // (beat, bar)
+    
+    // MARK: - Initialization
+    
+    init() {
+        updateTickInterval()
+    }
+    
+    func setup() throws {
+        var desc = AudioComponentDescription(
+            componentType: kAudioUnitType_Output,
+            componentSubType: kAudioUnitSubType_DefaultOutput,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        
+        guard let component = AudioComponentFindNext(nil, &desc) else {
+            throw ClockError.audioComponentNotFound
+        }
+        
+        var status = AudioComponentInstanceNew(component, &audioUnit)
+        guard status == noErr, let au = audioUnit else {
+            throw ClockError.audioUnitCreationFailed(status)
+        }
+        
+        // Hämta sample rate
+        var streamFormat = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        AudioUnitGetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &streamFormat, &size)
+        sampleRate = streamFormat.mSampleRate
+        
+        // Sätt render callback
+        var callbackStruct = AURenderCallbackStruct(
+            inputProc: clockRenderCallback,
+            inputProcRefCon: Unmanaged.passUnretained(self).toOpaque()
+        )
+        status = AudioUnitSetProperty(au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callbackStruct, UInt32(MemoryLayout<AURenderCallbackStruct>.size))
+        
+        status = AudioUnitInitialize(au)
+        guard status == noErr else {
+            throw ClockError.audioUnitInitializationFailed(status)
+        }
+        
+        updateTickInterval()
+    }
+    
+    // MARK: - Transport
+    
+    func start() {
+        guard let au = audioUnit, !isRunning else { return }
+        AudioOutputUnitStart(au)
+        isRunning = true
+    }
+    
+    func stop() {
+        guard let au = audioUnit, isRunning else { return }
+        AudioOutputUnitStop(au)
+        isRunning = false
+    }
+    
+    func reset() {
+        sampleCounter = 0
+        currentTick = 0
+        currentBeat = 0
+        currentBar = 0
+    }
+    
+    // MARK: - Private
+    
+    private func updateTickInterval() {
+        // Sekunder per tick
+        tickInterval = 60.0 / tempo / Double(ppqn)
+        samplesPerTick = sampleRate * tickInterval
+    }
+    
+    fileprivate func processSamples(_ frameCount: Int) {
+        guard isRunning else { return }
+        
+        sampleCounter += Double(frameCount)
+        
+        while sampleCounter >= samplesPerTick {
+            sampleCounter -= samplesPerTick
+            currentTick += 1
+            
+            // Callback för varje tick
+            tickCallback?(currentTick)
+            
+            // Kontrollera beat
+            if currentTick % ppqn == 0 {
+                currentBeat += 1
+                if currentBeat > 3 {  // 4/4
+                    currentBeat = 0
+                    currentBar += 1
+                }
+                beatCallback?(currentBeat, currentBar)
+            }
+        }
+    }
+    
+    deinit {
+        if let au = audioUnit {
+            AudioOutputUnitStop(au)
+            AudioComponentInstanceDispose(au)
+        }
+    }
+}
+
+// MARK: - Render Callback
+
+private func clockRenderCallback(
+    inRefCon: UnsafeMutableRawPointer,
+    ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+    inTimeStamp: UnsafePointer<AudioTimeStamp>,
+    inBusNumber: UInt32,
+    inNumberFrames: UInt32,
+    ioData: UnsafeMutablePointer<AudioBufferList>?
+) -> OSStatus {
+    let clock = Unmanaged<HighPrecisionClock>.fromOpaque(inRefCon).takeUnretainedValue()
+    clock.processSamples(Int(inNumberFrames))
+    
+    // Tyst output (vi använder bara för timing)
+    if let bufferList = ioData {
+        let buffer = UnsafeMutableAudioBufferListPointer(bufferList)
+        for buf in buffer {
+            memset(buf.mData, 0, Int(buf.mDataByteSize))
+        }
+    }
+    
+    return noErr
+}
+
+enum ClockError: Error {
+    case audioComponentNotFound
+    case audioUnitCreationFailed(OSStatus)
+    case audioUnitInitializationFailed(OSStatus)
+}
+```
+
+---
+
+### B.2 Step Conditions - Komplett Implementation
+
+```swift
+/// Alla villkorstyper för step-triggning (Cirklon-kompatibel)
+enum StepCondition: Codable, Equatable {
+    case always                          // Alltid trigga
+    case never                           // Aldrig trigga (muted step)
+    
+    // Fill-baserade
+    case fill                            // Endast vid fill
+    case notFill                         // Inte vid fill
+    
+    // Loop-baserade
+    case firstLoop                       // Endast första loopen
+    case notFirstLoop                    // Inte första loopen
+    case lastLoop                        // Endast sista loopen (kräver song mode)
+    
+    // Probability
+    case probability(percent: Int)       // X% chans (1-99)
+    
+    // A/B Patterns (1:2, 2:2, 1:3, 2:3, 3:3, 1:4, 2:4, 3:4, 4:4, etc.)
+    case pattern(hit: Int, of: Int)      // Spela på hit X av Y loopar
+    
+    // Pre/Nei conditions
+    case pre                             // Trigga endast om föregående steg triggade
+    case notPre                          // Trigga endast om föregående steg INTE triggade
+    case nei(offset: Int)                // Neighbor - beror på annat steg (offset)
+    
+    // Compound conditions
+    case and([StepCondition])            // Alla måste vara sanna
+    case or([StepCondition])             // Minst en måste vara sann
+    
+    /// Utvärdera villkoret
+    func evaluate(context: StepConditionContext) -> Bool {
+        switch self {
+        case .always:
+            return true
+            
+        case .never:
+            return false
+            
+        case .fill:
+            return context.fillActive
+            
+        case .notFill:
+            return !context.fillActive
+            
+        case .firstLoop:
+            return context.loopCount == 0
+            
+        case .notFirstLoop:
+            return context.loopCount > 0
+            
+        case .lastLoop:
+            return context.isLastLoop
+            
+        case .probability(let percent):
+            return Int.random(in: 1...100) <= percent
+            
+        case .pattern(let hit, let of):
+            // Modulo-baserad: spela på loop (hit-1) av varje "of" loopar
+            return (context.loopCount % of) == (hit - 1)
+            
+        case .pre:
+            return context.previousStepTriggered
+            
+        case .notPre:
+            return !context.previousStepTriggered
+            
+        case .nei(let offset):
+            return context.stepTriggered(at: context.currentStep + offset)
+            
+        case .and(let conditions):
+            return conditions.allSatisfy { $0.evaluate(context: context) }
+            
+        case .or(let conditions):
+            return conditions.contains { $0.evaluate(context: context) }
+        }
+    }
+    
+    /// Kortnamn för UI
+    var shortName: String {
+        switch self {
+        case .always: return "---"
+        case .never: return "OFF"
+        case .fill: return "FIL"
+        case .notFill: return "!FL"
+        case .firstLoop: return "1ST"
+        case .notFirstLoop: return "!1S"
+        case .lastLoop: return "LST"
+        case .probability(let p): return "\(p)%"
+        case .pattern(let h, let of): return "\(h):\(of)"
+        case .pre: return "PRE"
+        case .notPre: return "!PR"
+        case .nei(let o): return "N\(o > 0 ? "+" : "")\(o)"
+        case .and: return "AND"
+        case .or: return "OR"
+        }
+    }
+}
+
+/// Kontext för villkorsutvärdering
+struct StepConditionContext {
+    var fillActive: Bool
+    var loopCount: Int
+    var isLastLoop: Bool
+    var currentStep: Int
+    var previousStepTriggered: Bool
+    var stepTriggerHistory: [Int: Bool]  // Step index -> triggered
+    
+    func stepTriggered(at index: Int) -> Bool {
+        return stepTriggerHistory[index] ?? false
+    }
+}
+
+/// Preset-conditions för snabb åtkomst
+extension StepCondition {
+    static let presets: [String: StepCondition] = [
+        "1:2": .pattern(hit: 1, of: 2),   // Varannan loop
+        "2:2": .pattern(hit: 2, of: 2),
+        "1:3": .pattern(hit: 1, of: 3),   // Var tredje loop
+        "2:3": .pattern(hit: 2, of: 3),
+        "3:3": .pattern(hit: 3, of: 3),
+        "1:4": .pattern(hit: 1, of: 4),   // Var fjärde loop
+        "2:4": .pattern(hit: 2, of: 4),
+        "3:4": .pattern(hit: 3, of: 4),
+        "4:4": .pattern(hit: 4, of: 4),
+        "50%": .probability(percent: 50),
+        "25%": .probability(percent: 25),
+        "75%": .probability(percent: 75),
+        "10%": .probability(percent: 10),
+        "90%": .probability(percent: 90),
+    ]
+}
+```
+
+---
+
+### B.3 Ratchets/Rolls - Komplett Implementation
+
+```swift
+/// Ratchet (roll/retrigger) för ett steg
+struct Ratchet: Codable, Equatable {
+    var count: Int                       // 1-8 upprepningar inom steget
+    var velocityCurve: RatchetVelocity   // Hur velocity ändras
+    var gatePattern: [Bool]              // Vilka ratchets som faktiskt spelas
+    var timingSpread: Double             // 0 = jämnt, 1 = swing/shuffle mellan ratchets
+    
+    init(
+        count: Int = 2,
+        velocityCurve: RatchetVelocity = .constant,
+        gatePattern: [Bool]? = nil,
+        timingSpread: Double = 0
+    ) {
+        self.count = max(1, min(8, count))
+        self.velocityCurve = velocityCurve
+        self.gatePattern = gatePattern ?? Array(repeating: true, count: count)
+        self.timingSpread = max(0, min(1, timingSpread))
+    }
+    
+    /// Generera MIDI events för ratchet
+    func generateEvents(
+        baseNote: Int,
+        baseVelocity: Int,
+        stepDuration: Double,  // I sekunder
+        startTime: Double,
+        channel: UInt8
+    ) -> [RatchetEvent] {
+        var events: [RatchetEvent] = []
+        let ratchetDuration = stepDuration / Double(count)
+        
+        for i in 0..<count {
+            guard gatePattern.indices.contains(i), gatePattern[i] else { continue }
+            
+            // Beräkna velocity
+            let velocity = velocityCurve.velocityAt(
+                position: i,
+                total: count,
+                baseVelocity: baseVelocity
+            )
+            
+            // Beräkna timing
+            var timing = startTime + (Double(i) * ratchetDuration)
+            if timingSpread > 0 && i % 2 == 1 {
+                // Lägg till swing på udda ratchets
+                timing += ratchetDuration * timingSpread * 0.3
+            }
+            
+            events.append(RatchetEvent(
+                time: timing,
+                note: UInt8(baseNote),
+                velocity: UInt8(velocity),
+                duration: ratchetDuration * 0.9,  // 90% gate
+                channel: channel
+            ))
+        }
+        
+        return events
+    }
+}
+
+/// Velocity-kurva för ratchets
+enum RatchetVelocity: String, Codable, CaseIterable {
+    case constant      // Samma velocity
+    case decay         // Minska (accent på första)
+    case crescendo     // Öka (accent på sista)
+    case vShape        // Minska sedan öka
+    case invertedV     // Öka sedan minska
+    case random        // Slumpmässig variation
+    
+    func velocityAt(position: Int, total: Int, baseVelocity: Int) -> Int {
+        let normalized = Double(position) / Double(max(1, total - 1))
+        let base = Double(baseVelocity)
+        
+        switch self {
+        case .constant:
+            return baseVelocity
+            
+        case .decay:
+            // Börja på 127, sluta på 50% av base
+            let factor = 1.0 - (normalized * 0.5)
+            return Int(base * factor)
+            
+        case .crescendo:
+            // Börja på 50% av base, sluta på 127
+            let factor = 0.5 + (normalized * 0.5)
+            return min(127, Int(base * factor))
+            
+        case .vShape:
+            // Ner till mitten, sedan upp
+            let mid = 0.5
+            let factor: Double
+            if normalized < mid {
+                factor = 1.0 - (normalized * 0.6)
+            } else {
+                factor = 0.7 + ((normalized - mid) * 0.6)
+            }
+            return Int(base * factor)
+            
+        case .invertedV:
+            // Upp till mitten, sedan ner
+            let mid = 0.5
+            let factor: Double
+            if normalized < mid {
+                factor = 0.7 + (normalized * 0.6)
+            } else {
+                factor = 1.0 - ((normalized - mid) * 0.6)
+            }
+            return Int(base * factor)
+            
+        case .random:
+            let variation = Double.random(in: -0.3...0.3)
+            return max(1, min(127, Int(base * (1.0 + variation))))
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .constant: return "equal"
+        case .decay: return "arrow.down.right"
+        case .crescendo: return "arrow.up.right"
+        case .vShape: return "chevron.down"
+        case .invertedV: return "chevron.up"
+        case .random: return "shuffle"
+        }
+    }
+}
+
+struct RatchetEvent {
+    var time: Double       // Sekunder från step start
+    var note: UInt8
+    var velocity: UInt8
+    var duration: Double   // Sekunder
+    var channel: UInt8
+}
+
+/// Presets för vanliga ratchet-mönster
+extension Ratchet {
+    static let roll2 = Ratchet(count: 2, velocityCurve: .constant)
+    static let roll3 = Ratchet(count: 3, velocityCurve: .constant)
+    static let roll4 = Ratchet(count: 4, velocityCurve: .constant)
+    static let flam = Ratchet(count: 2, velocityCurve: .decay, timingSpread: 0.8)
+    static let buzz = Ratchet(count: 6, velocityCurve: .decay)
+    static let crescendoRoll = Ratchet(count: 4, velocityCurve: .crescendo)
+    static let machineGun = Ratchet(count: 8, velocityCurve: .constant)
+}
+```
+
+---
+
+### B.4 Parameter Locks - Komplett Implementation
+
+```swift
+/// Parameter Lock - per-step parameterändring
+struct ParameterLock: Codable, Equatable, Identifiable {
+    var id: UUID = UUID()
+    var parameter: LockableParameter
+    var value: Int                       // 0-127 (MIDI range)
+    var interpolation: LockInterpolation?  // Glide till detta värde
+    
+    init(parameter: LockableParameter, value: Int, interpolation: LockInterpolation? = nil) {
+        self.parameter = parameter
+        self.value = max(0, min(127, value))
+        self.interpolation = interpolation
+    }
+}
+
+/// Parametrar som kan låsas per steg
+enum LockableParameter: Codable, Equatable, Hashable {
+    // Standard MIDI CC
+    case cc(number: Int)
+    
+    // NRPN
+    case nrpn(msb: Int, lsb: Int)
+    
+    // Vanliga presets
+    case filterCutoff       // CC 74
+    case filterResonance    // CC 71
+    case filterEnvAmount    // CC 79
+    case ampEnvAttack       // CC 73
+    case ampEnvDecay        // CC 75
+    case ampEnvSustain      // CC 76 (non-standard)
+    case ampEnvRelease      // CC 72
+    case lfo1Rate           // CC 77 (non-standard)
+    case lfo1Depth          // CC 78 (non-standard)
+    case pan                // CC 10
+    case volume             // CC 7
+    case expression         // CC 11
+    case modWheel           // CC 1
+    case breath             // CC 2
+    case portamentoTime     // CC 5
+    case portamentoAmount   // CC 84
+    
+    /// Konvertera till MIDI CC
+    var ccNumber: Int? {
+        switch self {
+        case .cc(let num): return num
+        case .filterCutoff: return 74
+        case .filterResonance: return 71
+        case .filterEnvAmount: return 79
+        case .ampEnvAttack: return 73
+        case .ampEnvDecay: return 75
+        case .ampEnvSustain: return 76
+        case .ampEnvRelease: return 72
+        case .lfo1Rate: return 77
+        case .lfo1Depth: return 78
+        case .pan: return 10
+        case .volume: return 7
+        case .expression: return 11
+        case .modWheel: return 1
+        case .breath: return 2
+        case .portamentoTime: return 5
+        case .portamentoAmount: return 84
+        case .nrpn: return nil
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .cc(let num): return "CC \(num)"
+        case .nrpn(let msb, let lsb): return "NRPN \(msb):\(lsb)"
+        case .filterCutoff: return "Filter"
+        case .filterResonance: return "Reso"
+        case .filterEnvAmount: return "Env Amt"
+        case .ampEnvAttack: return "Attack"
+        case .ampEnvDecay: return "Decay"
+        case .ampEnvSustain: return "Sustain"
+        case .ampEnvRelease: return "Release"
+        case .lfo1Rate: return "LFO Rate"
+        case .lfo1Depth: return "LFO Depth"
+        case .pan: return "Pan"
+        case .volume: return "Volume"
+        case .expression: return "Expr"
+        case .modWheel: return "Mod"
+        case .breath: return "Breath"
+        case .portamentoTime: return "Porta T"
+        case .portamentoAmount: return "Porta A"
+        }
+    }
+}
+
+/// Interpolation mellan parameter locks
+struct LockInterpolation: Codable, Equatable {
+    var enabled: Bool
+    var curve: InterpolationCurve
+    var steps: Int?  // Över hur många steg (nil = till nästa lock)
+    
+    enum InterpolationCurve: String, Codable, CaseIterable {
+        case linear
+        case exponential
+        case logarithmic
+        case sCurve
+        case step  // Ingen interpolation
+        
+        func interpolate(from: Double, to: Double, progress: Double) -> Double {
+            switch self {
+            case .linear:
+                return from + (to - from) * progress
+            case .exponential:
+                return from + (to - from) * pow(progress, 2)
+            case .logarithmic:
+                return from + (to - from) * sqrt(progress)
+            case .sCurve:
+                // Smoothstep
+                let t = progress * progress * (3 - 2 * progress)
+                return from + (to - from) * t
+            case .step:
+                return progress < 1.0 ? from : to
+            }
+        }
+    }
+}
+
+/// Manager för parameter locks per spår
+class ParameterLockManager {
+    private var locksByStep: [Int: [ParameterLock]] = [:]
+    private var currentValues: [LockableParameter: Int] = [:]
+    
+    /// Sätt lock för ett steg
+    func setLock(_ lock: ParameterLock, at step: Int) {
+        if locksByStep[step] == nil {
+            locksByStep[step] = []
+        }
+        // Ta bort eventuell befintlig lock för samma parameter
+        locksByStep[step]?.removeAll { $0.parameter == lock.parameter }
+        locksByStep[step]?.append(lock)
+    }
+    
+    /// Ta bort lock
+    func removeLock(parameter: LockableParameter, at step: Int) {
+        locksByStep[step]?.removeAll { $0.parameter == parameter }
+    }
+    
+    /// Hämta locks för ett steg
+    func locks(at step: Int) -> [ParameterLock] {
+        return locksByStep[step] ?? []
+    }
+    
+    /// Beräkna värde vid ett steg (med interpolation)
+    func value(for parameter: LockableParameter, at step: Int, stepProgress: Double = 0) -> Int? {
+        // Hitta föregående och nästa lock
+        var prevStep: Int?
+        var prevLock: ParameterLock?
+        var nextStep: Int?
+        var nextLock: ParameterLock?
+        
+        for s in stride(from: step, through: 0, by: -1) {
+            if let locks = locksByStep[s], let lock = locks.first(where: { $0.parameter == parameter }) {
+                prevStep = s
+                prevLock = lock
+                break
+            }
+        }
+        
+        if let prev = prevLock, let interp = prev.interpolation, interp.enabled {
+            // Hitta nästa lock för interpolation
+            for s in (step + 1)..<128 {
+                if let locks = locksByStep[s], let lock = locks.first(where: { $0.parameter == parameter }) {
+                    nextStep = s
+                    nextLock = lock
+                    break
+                }
+            }
+            
+            if let next = nextLock, let ns = nextStep, let ps = prevStep {
+                let totalSteps = Double(ns - ps)
+                let currentProgress = (Double(step - ps) + stepProgress) / totalSteps
+                let interpolated = interp.curve.interpolate(
+                    from: Double(prev.value),
+                    to: Double(next.value),
+                    progress: min(1.0, max(0.0, currentProgress))
+                )
+                return Int(interpolated)
+            }
+        }
+        
+        return prevLock?.value
+    }
+    
+    /// Generera MIDI events för alla locks vid ett steg
+    func generateEvents(at step: Int, channel: UInt8, midiEngine: MIDIEngine) {
+        for lock in locks(at: step) {
+            if let cc = lock.parameter.ccNumber {
+                midiEngine.sendCC(channel: channel, controller: UInt8(cc), value: UInt8(lock.value))
+            }
+        }
+    }
+}
+```
+
+---
+
+### B.5 Uppdaterad StepModel med alla funktioner
+
+```swift
+/// Komplett StepModel med alla Cirklon-funktioner
+struct StepModel: Identifiable, Equatable, Codable {
+    let id: UUID
+    var index: Int
+    
+    // Grundläggande
+    var enabled: Bool                    // Om steget är aktivt
+    var note: Note?                      // Not (nil = använd spårets standard)
+    var velocity: Int?                   // Velocity (nil = använd spårets standard)
+    var gateTime: Double?                // Gate-tid som % av steg (nil = standard)
+    
+    // Timing
+    var microTiming: Int                 // -96 till +96 ticks offset
+    
+    // Villkor
+    var probability: Int                 // 0-100%
+    var condition: StepCondition         // Villkorlig triggning
+    
+    // Ratchet/Roll
+    var ratchet: Ratchet?
+    
+    // Ackord
+    var chord: [Int]?                    // Extra noter relativt huvudnot
+    
+    // Articulation
+    var slide: Bool                      // Legato/glide till nästa steg
+    var accent: Bool                     // Accent (hög velocity + ev. andra effekter)
+    
+    // Parameter Locks
+    var parameterLocks: [ParameterLock]
+    
+    init(
+        id: UUID = UUID(),
+        index: Int,
+        enabled: Bool = false,
+        note: Note? = nil,
+        velocity: Int? = nil,
+        gateTime: Double? = nil,
+        microTiming: Int = 0,
+        probability: Int = 100,
+        condition: StepCondition = .always,
+        ratchet: Ratchet? = nil,
+        chord: [Int]? = nil,
+        slide: Bool = false,
+        accent: Bool = false,
+        parameterLocks: [ParameterLock] = []
+    ) {
+        self.id = id
+        self.index = index
+        self.enabled = enabled
+        self.note = note
+        self.velocity = velocity
+        self.gateTime = gateTime
+        self.microTiming = max(-96, min(96, microTiming))
+        self.probability = max(0, min(100, probability))
+        self.condition = condition
+        self.ratchet = ratchet
+        self.chord = chord
+        self.slide = slide
+        self.accent = accent
+        self.parameterLocks = parameterLocks
+    }
+    
+    /// Effektiv velocity (med accent)
+    func effectiveVelocity(trackDefault: Int) -> Int {
+        var vel = velocity ?? trackDefault
+        if accent {
+            vel = min(127, vel + 30)  // Accent boost
+        }
+        return vel
+    }
+    
+    /// Utvärdera om steget ska triggas
+    func shouldTrigger(context: StepConditionContext) -> Bool {
+        guard enabled else { return false }
+        
+        // Kolla probability först
+        if probability < 100 {
+            if Int.random(in: 1...100) > probability {
+                return false
+            }
+        }
+        
+        // Kolla condition
+        return condition.evaluate(context: context)
+    }
+}
+
+/// Not-representation
+struct Note: Codable, Equatable {
+    var pitch: Int       // 0-127 MIDI note
+    var octave: Int      // -2 till +8 (för visning)
+    
+    init(pitch: Int) {
+        self.pitch = max(0, min(127, pitch))
+        self.octave = (pitch / 12) - 2
+    }
+    
+    var name: String {
+        let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        let noteName = noteNames[pitch % 12]
+        return "\(noteName)\(octave)"
+    }
+}
+```
+
+---
+
+### B.6 Uppdaterad TrackModel med alla funktioner
+
+```swift
+/// Komplett TrackModel med alla Cirklon-funktioner
+struct TrackModel: Identifiable, Equatable, Codable {
+    let id: UUID
+    var name: String
+    var color: TrackColor
+    
+    // Typ
+    var type: TrackType
+    
+    // MIDI
+    var midiChannel: Int               // 1-16
+    var outputPort: String?            // MIDI output port namn
+    
+    // State
+    var isMuted: Bool
+    var isSolo: Bool
+    
+    // Transpose
+    var transpose: Int                 // -48 till +48 halvtoner
+    
+    // Defaults
+    var defaultVelocity: Int           // 1-127
+    var defaultGateTime: Double        // 0-400% (1.0 = 100%)
+    var defaultNote: Int               // 0-127
+    
+    // Pattern
+    var length: Int                    // 1-128 steg (polymetrisk)
+    var steps: [StepModel]
+    
+    // P3 Modulators
+    var p3Modulators: [P3Modulator]
+    
+    init(
+        id: UUID = UUID(),
+        name: String,
+        color: TrackColor = .silver,
+        type: TrackType = .instrument,
+        midiChannel: Int = 1,
+        outputPort: String? = nil,
+        isMuted: Bool = false,
+        isSolo: Bool = false,
+        transpose: Int = 0,
+        defaultVelocity: Int = 100,
+        defaultGateTime: Double = 1.0,
+        defaultNote: Int = 60,
+        length: Int = 16,
+        steps: [StepModel]? = nil,
+        p3Modulators: [P3Modulator] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.type = type
+        self.midiChannel = max(1, min(16, midiChannel))
+        self.outputPort = outputPort
+        self.isMuted = isMuted
+        self.isSolo = isSolo
+        self.transpose = max(-48, min(48, transpose))
+        self.defaultVelocity = max(1, min(127, defaultVelocity))
+        self.defaultGateTime = max(0, min(4, defaultGateTime))
+        self.defaultNote = max(0, min(127, defaultNote))
+        self.length = max(1, min(128, length))
+        self.steps = steps ?? (0..<length).map { StepModel(index: $0) }
+        self.p3Modulators = p3Modulators
+    }
+}
+
+/// Spårtyp
+enum TrackType: String, Codable, CaseIterable {
+    case instrument = "CK"        // Standard melodiskt spår
+    case cv = "CV"                // CV/Gate output
+    case auxiliary = "AUX"        // Hjälpspår för CC/NRPN
+    case p3 = "P3"                // Parameter-modulering
+    
+    var icon: String {
+        switch self {
+        case .instrument: return "pianokeys"
+        case .cv: return "waveform"
+        case .auxiliary: return "slider.horizontal.3"
+        case .p3: return "function"
+        }
+    }
+}
+
+/// Spårfärger (Make Noise-inspirerade)
+enum TrackColor: String, Codable, CaseIterable {
+    case silver, copper, iceBlue, tan, sage, mauve, warmGrey, tealGrey
+    
+    var color: (r: Double, g: Double, b: Double) {
+        switch self {
+        case .silver: return (0.75, 0.75, 0.75)
+        case .copper: return (0.85, 0.65, 0.55)
+        case .iceBlue: return (0.70, 0.78, 0.82)
+        case .tan: return (0.82, 0.76, 0.68)
+        case .sage: return (0.65, 0.72, 0.65)
+        case .mauve: return (0.78, 0.72, 0.78)
+        case .warmGrey: return (0.72, 0.68, 0.62)
+        case .tealGrey: return (0.68, 0.75, 0.75)
+        }
+    }
+}
+
+/// P3 Modulator (LFO, Envelope, etc. per spår)
+struct P3Modulator: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var type: P3ModulatorType
+    var target: LockableParameter
+    var depth: Double                  // 0-1
+    var bipolar: Bool                  // +/- eller endast +
+}
+
+enum P3ModulatorType: Codable, Equatable {
+    case lfo(LFOSettings)
+    case envelope(EnvelopeSettings)
+    case stepModulator(steps: [Double], length: Int)
+    case random(rate: Double, smooth: Bool)
+}
+
+struct LFOSettings: Codable, Equatable {
+    var shape: LFOShape
+    var rate: Double
+    var syncToTempo: Bool
+    var phase: Double
+    var retrigger: Bool
+}
+
+struct EnvelopeSettings: Codable, Equatable {
+    var attack: Double
+    var decay: Double
+    var sustain: Double
+    var release: Double
+}
+
+enum LFOShape: String, Codable, CaseIterable {
+    case sine, triangle, saw, ramp, square, random, smoothRandom
+}
+```
+
+---
+
+### B.7 Integrerad SequencerEngine
+
+```swift
+/// Komplett Sequencer Engine som integrerar allt
+@MainActor
+class SequencerEngine: ObservableObject {
+    
+    // MARK: - Core Components
+    let midiEngine: MIDIEngine
+    let clock: HighPrecisionClock
+    let cvEngine: CVEngine?           // Optional ES-9
+    
+    // MARK: - State
+    @Published var isPlaying: Bool = false
+    @Published var isRecording: Bool = false
+    @Published var tempo: Double = 120.0
+    @Published var currentTick: Int = 0
+    
+    // MARK: - Pattern Data
+    @Published var patterns: [PatternModel] = []
+    @Published var currentPatternIndex: Int = 0
+    
+    // MARK: - Condition Context
+    private var conditionContext = StepConditionContext(
+        fillActive: false,
+        loopCount: 0,
+        isLastLoop: false,
+        currentStep: 0,
+        previousStepTriggered: false,
+        stepTriggerHistory: [:]
+    )
+    
+    // MARK: - Parameter Lock Managers
+    private var lockManagers: [UUID: ParameterLockManager] = [:]
+    
+    // MARK: - Initialization
+    
+    init() {
+        self.midiEngine = MIDIEngine()
+        self.clock = HighPrecisionClock()
+        self.cvEngine = nil  // Initieras separat om ES-9 finns
+        
+        setupCallbacks()
+    }
+    
+    func setup() async throws {
+        try midiEngine.setup()
+        try clock.setup()
+    }
+    
+    private func setupCallbacks() {
+        clock.tickCallback = { [weak self] tick in
+            Task { @MainActor in
+                self?.processTick(tick)
+            }
+        }
+        
+        clock.beatCallback = { [weak self] beat, bar in
+            Task { @MainActor in
+                self?.processBeat(beat, bar: bar)
+            }
+        }
+    }
+    
+    // MARK: - Transport
+    
+    func play() {
+        isPlaying = true
+        conditionContext.loopCount = 0
+        midiEngine.sendStart()
+        clock.start()
+    }
+    
+    func stop() {
+        isPlaying = false
+        clock.stop()
+        clock.reset()
+        midiEngine.sendStop()
+        allNotesOff()
+    }
+    
+    func setTempo(_ bpm: Double) {
+        tempo = bpm
+        clock.tempo = bpm
+    }
+    
+    func toggleFill(_ active: Bool) {
+        conditionContext.fillActive = active
+    }
+    
+    // MARK: - Tick Processing
+    
+    private func processTick(_ tick: Int) {
+        currentTick = tick
+        
+        guard let pattern = patterns[safe: currentPatternIndex] else { return }
+        
+        let ticksPerStep = clock.ppqn / 4  // 16th notes = 24 ticks
+        let stepIndex = (tick / ticksPerStep) % pattern.length
+        
+        conditionContext.currentStep = stepIndex
+        
+        // Processa varje spår
+        for track in pattern.tracks {
+            processTrackStep(track, at: stepIndex, tick: tick)
+        }
+        
+        // Skicka MIDI clock
+        midiEngine.sendClock()
+    }
+    
+    private func processTrackStep(_ track: TrackModel, at stepIndex: Int, tick: Int) {
+        guard !track.isMuted else { return }
+        guard stepIndex < track.steps.count else { return }
+        
+        let step = track.steps[stepIndex]
+        
+        // Utvärdera villkor
+        conditionContext.previousStepTriggered = conditionContext.stepTriggerHistory[stepIndex - 1] ?? false
+        
+        let shouldTrigger = step.shouldTrigger(context: conditionContext)
+        conditionContext.stepTriggerHistory[stepIndex] = shouldTrigger
+        
+        guard shouldTrigger else { return }
+        
+        let channel = UInt8(track.midiChannel - 1)
+        let note = UInt8((step.note?.pitch ?? track.defaultNote) + track.transpose)
+        let velocity = UInt8(step.effectiveVelocity(trackDefault: track.defaultVelocity))
+        
+        // Parameter Locks
+        if let manager = lockManagers[track.id] {
+            manager.generateEvents(at: stepIndex, channel: channel, midiEngine: midiEngine)
+        }
+        
+        // Ratchet eller vanlig not
+        if let ratchet = step.ratchet {
+            let stepDuration = 60.0 / tempo / 4.0  // 16th note duration
+            let events = ratchet.generateEvents(
+                baseNote: Int(note),
+                baseVelocity: Int(velocity),
+                stepDuration: stepDuration,
+                startTime: 0,
+                channel: channel
+            )
+            
+            for event in events {
+                let timestamp = midiEngine.timestampAfter(milliseconds: event.time * 1000)
+                midiEngine.sendNoteOn(channel: channel, note: event.note, velocity: event.velocity, timestamp: timestamp)
+                
+                let offTimestamp = midiEngine.timestampAfter(milliseconds: (event.time + event.duration) * 1000)
+                midiEngine.sendNoteOff(channel: channel, note: event.note, timestamp: offTimestamp)
+            }
+        } else {
+            // Vanlig not
+            midiEngine.sendNoteOn(channel: channel, note: note, velocity: velocity)
+            
+            // Ackord
+            if let chord = step.chord {
+                for interval in chord {
+                    let chordNote = UInt8(Int(note) + interval)
+                    midiEngine.sendNoteOn(channel: channel, note: chordNote, velocity: velocity)
+                }
+            }
+            
+            // Schemalägg note off
+            let gateTime = step.gateTime ?? track.defaultGateTime
+            let stepDuration = 60.0 / tempo / 4.0
+            let noteDuration = stepDuration * gateTime * 0.95  // 95% för att undvika överlapp
+            
+            let offTimestamp = midiEngine.timestampAfter(milliseconds: noteDuration * 1000)
+            midiEngine.sendNoteOff(channel: channel, note: note, timestamp: offTimestamp)
+            
+            if let chord = step.chord {
+                for interval in chord {
+                    let chordNote = UInt8(Int(note) + interval)
+                    midiEngine.sendNoteOff(channel: channel, note: chordNote, timestamp: offTimestamp)
+                }
+            }
+        }
+    }
+    
+    private func processBeat(_ beat: Int, bar: Int) {
+        // Uppdatera loop count vid pattern-slut
+        if let pattern = patterns[safe: currentPatternIndex] {
+            let stepsPerBar = 16  // Assuming 4/4
+            let currentStep = (bar * stepsPerBar) + (beat * 4)
+            
+            if currentStep >= pattern.length && currentStep % pattern.length == 0 {
+                conditionContext.loopCount += 1
+                conditionContext.stepTriggerHistory.removeAll()
+            }
+        }
+    }
+    
+    private func allNotesOff() {
+        for channel: UInt8 in 0..<16 {
+            midiEngine.sendCC(channel: channel, controller: 123, value: 0)  // All Notes Off
+        }
+    }
+}
+
+// MARK: - Helpers
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
+```
+
+---
+
 *Senast uppdaterad: December 2024*
