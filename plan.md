@@ -6029,4 +6029,853 @@ struct AddEntryButton: View {
 
 ---
 
+## Appendix D: Liquid Glass UI Design
+
+### D.1 Översikt - Liquid Glass för Snirklon
+
+Apple's Liquid Glass designspråk (iOS 26/macOS 26) passar perfekt för en modern sequencer med dess:
+- **Translucenta ytor** med dynamisk bakgrundsblur
+- **Glaslika djup** som skapar hierarki
+- **Ljusreflektioner** som följer enhetens rörelse
+- **Mjuka skuggor** och subtila gradienter
+
+#### Fördelar för Sequencer-UX
+
+| Aspekt | Liquid Glass-förstärkning |
+|--------|---------------------------|
+| **Fokus** | Aktiva element "lyfts fram" med glaseffekt |
+| **Hierarki** | Djup skapar tydlig visuell ordning |
+| **Kontext** | Genomskinlighet visar underliggande content |
+| **Feedback** | Ljusreflektioner ger taktil känsla |
+| **Immersion** | Känslan av att interagera med fysiskt glas |
+
+---
+
+### D.2 Step Grid med Liquid Glass
+
+```swift
+/// Liquid Glass StepCell - ersätter nuvarande StepCellView
+struct LiquidGlassStepCell: View {
+    let step: StepModel
+    let isPlaying: Bool
+    let isSelected: Bool
+    
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        ZStack {
+            // Bakgrund med glaseffekt
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    // Inre glasreflexion (top highlight)
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.3),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                )
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+            
+            // Aktiv indikator (glödande glas)
+            if step.enabled {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                velocityColor.opacity(0.8),
+                                velocityColor.opacity(0.4)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .padding(2)
+                    .overlay(
+                        // Inre glow
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(velocityColor, lineWidth: 1)
+                            .blur(radius: 2)
+                            .padding(2)
+                    )
+            }
+            
+            // Velocity-bar med glaseffekt
+            if step.enabled {
+                VStack {
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(.regularMaterial)
+                        .frame(height: velocityHeight)
+                        .overlay(
+                            Color.white.opacity(0.3)
+                                .clipShape(RoundedRectangle(cornerRadius: 2))
+                        )
+                }
+                .padding(4)
+            }
+            
+            // Playing indicator - pulsande glow
+            if isPlaying {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.green, lineWidth: 2)
+                    .shadow(color: .green, radius: 8)
+                    .animation(.easeInOut(duration: 0.1), value: isPlaying)
+            }
+            
+            // Selection ring - glasig kant
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.8), .white.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
+            }
+            
+            // Condition indicator (liten glasig badge)
+            if step.condition != .always {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Text(step.condition.shortName)
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                }
+                .padding(3)
+            }
+        }
+        .frame(width: 44, height: 44)
+    }
+    
+    private var velocityColor: Color {
+        let velocity = Double(step.velocity ?? 100) / 127.0
+        return Color(
+            hue: 0.35 - (velocity * 0.15),  // Grön → Orange
+            saturation: 0.7,
+            brightness: 0.9
+        )
+    }
+    
+    private var velocityHeight: CGFloat {
+        let normalized = CGFloat(step.velocity ?? 100) / 127.0
+        return 36 * normalized
+    }
+}
+```
+
+---
+
+### D.3 Transport Bar med Liquid Glass
+
+```swift
+struct LiquidGlassTransportBar: View {
+    @ObservedObject var engine: SequencerEngine
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Play/Stop - stor glasknapp
+            GlassButton(
+                icon: engine.isPlaying ? "stop.fill" : "play.fill",
+                isActive: engine.isPlaying,
+                activeColor: .green
+            ) {
+                engine.togglePlayback()
+            }
+            .frame(width: 60, height: 60)
+            
+            // Record
+            GlassButton(
+                icon: "record.circle",
+                isActive: engine.isRecording,
+                activeColor: .red
+            ) {
+                engine.toggleRecording()
+            }
+            
+            Divider()
+                .frame(height: 40)
+                .background(.ultraThinMaterial)
+            
+            // Tempo - glasig display med knob
+            GlassTempoDisplay(tempo: $engine.tempo)
+            
+            Divider()
+                .frame(height: 40)
+                .background(.ultraThinMaterial)
+            
+            // Position display
+            GlassPositionDisplay(
+                bar: engine.currentBar,
+                beat: engine.currentBeat,
+                tick: engine.currentTick
+            )
+            
+            Spacer()
+            
+            // Sync status
+            GlassSyncIndicator(
+                linkEnabled: engine.linkSession?.isEnabled ?? false,
+                peers: engine.linkSession?.numPeers ?? 0
+            )
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+    }
+}
+
+/// Glasig knapp med hover/press-effekter
+struct GlassButton: View {
+    let icon: String
+    var isActive: Bool = false
+    var activeColor: Color = .blue
+    let action: () -> Void
+    
+    @State private var isPressed: Bool = false
+    @State private var isHovered: Bool = false
+    
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                // Bas-glas
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(isHovered ? 0.4 : 0.2),
+                                        Color.clear
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: isPressed ? 2 : 4)
+                
+                // Aktiv glow
+                if isActive {
+                    Circle()
+                        .fill(activeColor.opacity(0.3))
+                        .blur(radius: 8)
+                    
+                    Circle()
+                        .stroke(activeColor, lineWidth: 2)
+                        .shadow(color: activeColor, radius: 6)
+                }
+                
+                // Ikon
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(isActive ? activeColor : .primary)
+            }
+            .scaleEffect(isPressed ? 0.95 : 1.0)
+            .animation(.spring(response: 0.2), value: isPressed)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+    }
+}
+
+/// Glasig tempo-display med interaktiv knob
+struct GlassTempoDisplay: View {
+    @Binding var tempo: Double
+    @State private var isDragging = false
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // BPM siffror - glasig display
+            Text(String(format: "%.1f", tempo))
+                .font(.system(size: 32, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            
+            Text("BPM")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            // Knob med glasig look
+            GlassKnob(value: $tempo, range: 20...300)
+                .frame(width: 44, height: 44)
+        }
+    }
+}
+```
+
+---
+
+### D.4 Inspector Panel med Liquid Glass
+
+```swift
+struct LiquidGlassInspector: View {
+    @Binding var step: StepModel
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header med drag handle
+            GlassInspectorHeader(title: "Step \(step.index + 1)") {
+                isPresented = false
+            }
+            
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Note section
+                    GlassSection(title: "NOTE") {
+                        GlassNoteSelector(note: Binding(
+                            get: { step.note?.pitch ?? 60 },
+                            set: { step.note = Note(pitch: $0) }
+                        ))
+                    }
+                    
+                    // Velocity section
+                    GlassSection(title: "VELOCITY") {
+                        GlassSlider(
+                            value: Binding(
+                                get: { Double(step.velocity ?? 100) },
+                                set: { step.velocity = Int($0) }
+                            ),
+                            range: 1...127,
+                            color: .orange
+                        )
+                    }
+                    
+                    // Gate section
+                    GlassSection(title: "GATE") {
+                        GlassSlider(
+                            value: Binding(
+                                get: { (step.gateTime ?? 1.0) * 100 },
+                                set: { step.gateTime = $0 / 100 }
+                            ),
+                            range: 0...400,
+                            suffix: "%",
+                            color: .cyan
+                        )
+                    }
+                    
+                    // Condition section
+                    GlassSection(title: "CONDITION") {
+                        GlassConditionPicker(condition: $step.condition)
+                    }
+                    
+                    // Ratchet section
+                    GlassSection(title: "RATCHET") {
+                        GlassRatchetEditor(ratchet: $step.ratchet)
+                    }
+                    
+                    // Toggles row
+                    HStack(spacing: 12) {
+                        GlassToggle(label: "SLIDE", isOn: $step.slide)
+                        GlassToggle(label: "ACCENT", isOn: $step.accent)
+                    }
+                }
+                .padding()
+            }
+        }
+        .frame(width: 320)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
+    }
+}
+
+/// Glasig sektion med header
+struct GlassSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            
+            content()
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.thinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                )
+        }
+    }
+}
+
+/// Glasig slider med live feedback
+struct GlassSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var suffix: String = ""
+    var color: Color = .blue
+    
+    @State private var isDragging = false
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            // Value display
+            Text("\(Int(value))\(suffix)")
+                .font(.system(size: 18, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+            
+            // Slider track
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    // Background track (glasig)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                    
+                    // Fill (glasig med färg)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            LinearGradient(
+                                colors: [color.opacity(0.6), color.opacity(0.3)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: fillWidth(in: geo.size.width))
+                        .overlay(
+                            // Glow
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(color, lineWidth: 1)
+                                .blur(radius: isDragging ? 4 : 2)
+                        )
+                    
+                    // Thumb (glasig knob)
+                    Circle()
+                        .fill(.regularMaterial)
+                        .overlay(
+                            Circle()
+                                .stroke(color, lineWidth: 2)
+                        )
+                        .shadow(color: color.opacity(0.5), radius: isDragging ? 8 : 4)
+                        .frame(width: 24, height: 24)
+                        .offset(x: thumbOffset(in: geo.size.width))
+                        .scaleEffect(isDragging ? 1.2 : 1.0)
+                        .animation(.spring(response: 0.2), value: isDragging)
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            isDragging = true
+                            let normalized = gesture.location.x / geo.size.width
+                            let clamped = max(0, min(1, normalized))
+                            value = range.lowerBound + clamped * (range.upperBound - range.lowerBound)
+                        }
+                        .onEnded { _ in
+                            isDragging = false
+                        }
+                )
+            }
+            .frame(height: 24)
+        }
+    }
+    
+    private func fillWidth(in totalWidth: CGFloat) -> CGFloat {
+        let normalized = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return totalWidth * CGFloat(normalized)
+    }
+    
+    private func thumbOffset(in totalWidth: CGFloat) -> CGFloat {
+        let normalized = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return (totalWidth - 24) * CGFloat(normalized)
+    }
+}
+```
+
+---
+
+### D.5 Track Sidebar med Liquid Glass
+
+```swift
+struct LiquidGlassTrackSidebar: View {
+    @Binding var tracks: [TrackModel]
+    @Binding var selectedTrackId: UUID?
+    
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 4) {
+                ForEach(tracks) { track in
+                    GlassTrackRow(
+                        track: track,
+                        isSelected: selectedTrackId == track.id,
+                        onSelect: { selectedTrackId = track.id },
+                        onMute: { toggleMute(track) },
+                        onSolo: { toggleSolo(track) }
+                    )
+                }
+            }
+            .padding(8)
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    // ...
+}
+
+struct GlassTrackRow: View {
+    let track: TrackModel
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onMute: () -> Void
+    let onSolo: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Track color indicator (glasig dot)
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [trackColor, trackColor.opacity(0.5)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 8
+                    )
+                )
+                .frame(width: 16, height: 16)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                )
+                .shadow(color: trackColor.opacity(0.5), radius: 4)
+            
+            // Track name
+            Text(track.name)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(track.isMuted ? .secondary : .primary)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            // Mute/Solo buttons (glasiga)
+            HStack(spacing: 4) {
+                GlassMiniButton(
+                    label: "M",
+                    isActive: track.isMuted,
+                    activeColor: .orange,
+                    action: onMute
+                )
+                
+                GlassMiniButton(
+                    label: "S",
+                    isActive: track.isSolo,
+                    activeColor: .yellow,
+                    action: onSolo
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? .regularMaterial : .ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            isSelected ? trackColor.opacity(0.5) : Color.clear,
+                            lineWidth: 2
+                        )
+                )
+        )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(response: 0.2), value: isHovered)
+        .onHover { isHovered = $0 }
+        .onTapGesture(perform: onSelect)
+    }
+    
+    private var trackColor: Color {
+        let rgb = track.color.color
+        return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
+    }
+}
+
+struct GlassMiniButton: View {
+    let label: String
+    let isActive: Bool
+    let activeColor: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(isActive ? activeColor : .secondary)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isActive ? activeColor.opacity(0.2) : .ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isActive ? activeColor.opacity(0.5) : Color.clear, lineWidth: 1)
+                        )
+                )
+                .shadow(color: isActive ? activeColor.opacity(0.3) : .clear, radius: 4)
+        }
+        .buttonStyle(.plain)
+    }
+}
+```
+
+---
+
+### D.6 Pattern Chain med Liquid Glass
+
+```swift
+struct LiquidGlassPatternChain: View {
+    @Binding var chain: PatternChain
+    let patterns: [PatternModel]
+    @ObservedObject var chainManager: PatternChainManager
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(chain.entries.enumerated()), id: \.element.id) { index, entry in
+                    GlassChainSlot(
+                        entry: entry,
+                        pattern: patterns.first { $0.id == entry.patternId },
+                        isPlaying: chainManager.currentEntryIndex == index && chainManager.isPlaying,
+                        isQueued: chainManager.queuedEntryIndex == index,
+                        repetitionProgress: chainManager.currentEntryIndex == index ?
+                            Double(chainManager.currentRepetition) / Double(entry.repetitions) : 0
+                    )
+                    .onTapGesture {
+                        chainManager.jumpToEntry(at: index)
+                    }
+                    .onLongPressGesture {
+                        chainManager.queuePatternInChain(at: index)
+                    }
+                    
+                    // Connector (glasig linje)
+                    if index < chain.entries.count - 1 {
+                        GlassConnector()
+                    }
+                }
+                
+                // Add slot
+                GlassAddSlot()
+            }
+            .padding()
+        }
+        .frame(height: 140)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
+struct GlassChainSlot: View {
+    let entry: ChainEntry
+    let pattern: PatternModel?
+    let isPlaying: Bool
+    let isQueued: Bool
+    let repetitionProgress: Double
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            // Pattern thumbnail
+            ZStack {
+                // Glasig bas
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.thinMaterial)
+                    .overlay(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.2),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                // Pattern color overlay
+                if let pattern = pattern {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(patternColor(pattern).opacity(0.3))
+                }
+                
+                // Pattern name
+                VStack {
+                    Text(pattern?.name ?? "?")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    
+                    if entry.repetitions > 1 {
+                        Text("×\(entry.repetitions)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                // Playing indicator (pulsande ring)
+                if isPlaying {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green, lineWidth: 3)
+                        .shadow(color: .green, radius: 8)
+                    
+                    // Progress ring
+                    RoundedRectangle(cornerRadius: 12)
+                        .trim(from: 0, to: repetitionProgress)
+                        .stroke(Color.green.opacity(0.5), lineWidth: 3)
+                }
+                
+                // Queued indicator
+                if isQueued && !isPlaying {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.orange, lineWidth: 2)
+                        .shadow(color: .orange, radius: 6)
+                }
+            }
+            .frame(width: 80, height: 80)
+            
+            // Transpose indicator
+            if entry.transpose != 0 {
+                Text("\(entry.transpose > 0 ? "+" : "")\(entry.transpose)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+        }
+    }
+    
+    private func patternColor(_ pattern: PatternModel) -> Color {
+        Color(pattern.color.rawValue)
+    }
+}
+
+struct GlassConnector: View {
+    var body: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.1),
+                        Color.white.opacity(0.3),
+                        Color.white.opacity(0.1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: 20, height: 2)
+            .overlay(
+                // Arrow
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+            )
+    }
+}
+```
+
+---
+
+### D.7 Sammanfattning: Liquid Glass UX-förstärkning
+
+| Element | Förbättring |
+|---------|-------------|
+| **Step Grid** | Djup och hierarki, velocity visas som glasig intensitet |
+| **Transport** | Taktila knappar med glow, tempo-display som LCD |
+| **Inspector** | Flytande panel med blur, sektioner med djup |
+| **Track Sidebar** | Hover-effekter, selection glow, mute/solo-badges |
+| **Pattern Chain** | Slots med progress-ring, connectors, queue-indikator |
+| **Modals** | Sheet-liknande glas med skugga och blur |
+| **Buttons** | Press-feedback, hover-glow, active-state |
+| **Sliders** | Glasig thumb med färg-glow, smooth drag |
+
+#### Visuell Hierarki
+
+```
+┌─────────────────────────────────────────────────────┐
+│  BAKGRUND (blur av underliggande content)           │
+│  ┌───────────────────────────────────────────────┐  │
+│  │  PANEL (.ultraThinMaterial)                   │  │
+│  │  ┌─────────────────────────────────────────┐  │  │
+│  │  │  SEKTION (.thinMaterial)                │  │  │
+│  │  │  ┌───────────────────────────────────┐  │  │  │
+│  │  │  │  KONTROLL (.regularMaterial)      │  │  │  │
+│  │  │  │  ┌─────────────────────────────┐  │  │  │  │
+│  │  │  │  │  AKTIV ELEMENT (glow+color) │  │  │  │  │
+│  │  │  │  └─────────────────────────────┘  │  │  │  │
+│  │  │  └───────────────────────────────────┘  │  │  │
+│  │  └─────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Färgpalett för Liquid Glass
+
+```swift
+extension Color {
+    // Glas-accenter
+    static let glassHighlight = Color.white.opacity(0.3)
+    static let glassShadow = Color.black.opacity(0.2)
+    
+    // Status-glows
+    static let playingGlow = Color.green
+    static let recordingGlow = Color.red
+    static let queuedGlow = Color.orange
+    static let selectedGlow = Color.blue
+    
+    // Velocity gradient (grön → orange → röd)
+    static func velocityColor(_ velocity: Int) -> Color {
+        let normalized = Double(velocity) / 127.0
+        return Color(
+            hue: 0.35 - (normalized * 0.25),
+            saturation: 0.7,
+            brightness: 0.9
+        )
+    }
+}
+```
+
+---
+
 *Senast uppdaterad: December 2024*
