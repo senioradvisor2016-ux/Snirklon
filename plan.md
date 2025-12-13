@@ -736,6 +736,947 @@ enum ClockDivision: CaseIterable {
 
 ---
 
+### Fas 3C: Avancerat CV-system (Bitwig-inspirerat)
+
+#### 3C.1 Filosofi: CV = Audio
+
+I Snirklon behandlas **CV som audio** vilket ger:
+- Full 32-bit floating point precision
+- Sample-accurate timing
+- Processbar med alla audio-effekter
+- Flexibel routing via audio-bussar
+
+```swift
+/// CV-signaler är audio-signaler
+/// Range: -1.0 till +1.0 (mappat till ±10V eller 0-10V beroende på kalibrering)
+typealias CVSignal = AudioBuffer  // Float32 samples
+```
+
+---
+
+#### 3C.2 Projektstruktur (Utökad CV)
+
+```
+Snirklon/
+├── Sources/
+│   ├── Core/
+│   │   ├── CV/
+│   │   │   ├── Engine/
+│   │   │   │   ├── CVEngine.swift
+│   │   │   │   ├── CVAudioProcessor.swift
+│   │   │   │   └── CVRoutingMatrix.swift
+│   │   │   ├── IO/
+│   │   │   │   ├── CVInput.swift
+│   │   │   │   ├── CVOutput.swift
+│   │   │   │   └── CVCalibration.swift
+│   │   │   ├── Devices/
+│   │   │   │   ├── HWCVInstrument.swift
+│   │   │   │   ├── HWCVClock.swift
+│   │   │   │   ├── HWCVOut.swift
+│   │   │   │   └── HWCVIn.swift
+│   │   │   ├── Modulators/
+│   │   │   │   ├── CVModulator.swift
+│   │   │   │   ├── CVLFO.swift
+│   │   │   │   ├── CVEnvelope.swift
+│   │   │   │   ├── CVCurves.swift
+│   │   │   │   ├── CVRandom.swift
+│   │   │   │   ├── CVSteps.swift
+│   │   │   │   └── CVSidechain.swift
+│   │   │   ├── Processing/
+│   │   │   │   ├── CVProcessor.swift
+│   │   │   │   ├── CVFilter.swift
+│   │   │   │   ├── CVDistortion.swift
+│   │   │   │   ├── CVDelay.swift
+│   │   │   │   ├── CVQuantizer.swift
+│   │   │   │   └── CVSlew.swift
+│   │   │   ├── Conversion/
+│   │   │   │   ├── MIDItoCVConverter.swift
+│   │   │   │   ├── CVtoMIDIConverter.swift
+│   │   │   │   └── MPEtoCVConverter.swift
+│   │   │   └── Routing/
+│   │   │       ├── CVBus.swift
+│   │   │       ├── CVPatch.swift
+│   │   │       └── CVFeedback.swift
+```
+
+---
+
+#### 3C.3 HW CV Devices (Hårdvaru-integration)
+
+##### HWCVInstrument.swift - Komplett instrument-interface
+```swift
+class HWCVInstrument: ObservableObject {
+    var id: UUID
+    var name: String
+    var audioInterface: AudioDeviceID
+    
+    // CV Outputs
+    @Published var pitchOutput: CVOutput          // 1V/oktav pitch
+    @Published var gateOutput: CVOutput           // Gate/Trigger
+    @Published var velocityOutput: CVOutput?      // Velocity CV
+    @Published var aftertouchOutput: CVOutput?    // Aftertouch/Pressure
+    @Published var modWheelOutput: CVOutput?      // Mod wheel CV
+    
+    // Polyfoni
+    @Published var voiceCount: Int = 1            // 1-8 röster
+    @Published var voiceAllocation: VoiceAllocation
+    
+    // Kalibrering per synth
+    @Published var calibration: InstrumentCalibration
+    
+    // Clock/Reset
+    @Published var clockOutput: CVOutput?
+    @Published var resetOutput: CVOutput?
+    @Published var runOutput: CVOutput?
+    
+    struct InstrumentCalibration: Codable {
+        var name: String                          // "Moog Mother-32", "Behringer Neutron"
+        var voltageStandard: VoltageStandard     // .oneVoltPerOctave, .hzPerVolt
+        var pitchRange: ClosedRange<Double>      // T.ex. -5V...+5V
+        var gateVoltage: Double                  // T.ex. 5V eller 10V
+        var triggerWidth: Double                 // ms
+        var noteOffset: Int                      // MIDI note offset
+        var tuningTable: [Int: Double]?          // Custom tuning per note
+    }
+    
+    enum VoltageStandard {
+        case oneVoltPerOctave    // Eurorack, Moog, etc.
+        case hzPerVolt           // Korg MS-20, etc.
+        case octPerVolt          // Buchla
+    }
+}
+```
+
+##### HWCVClock.swift - Analog clock-generator
+```swift
+class HWCVClock: ObservableObject {
+    var id: UUID
+    var name: String
+    
+    // Clock output
+    @Published var clockOutput: CVOutput
+    @Published var division: ClockDivision
+    @Published var multiplication: Int               // 1x, 2x, 4x, 8x
+    
+    // Stabilitet
+    @Published var jitterCompensation: Bool = true
+    @Published var analogDrift: Double = 0           // Simulera analog instabilitet
+    
+    // Transport
+    @Published var startOutput: CVOutput?            // Start-puls
+    @Published var stopOutput: CVOutput?             // Stop-puls
+    @Published var resetOutput: CVOutput?            // Reset-puls
+    @Published var runOutput: CVOutput?              // High när playing
+    
+    // Avancerat
+    @Published var swing: Double = 0                 // Swing amount
+    @Published var swingSource: SwingSource         // .internal, .groove, .external
+    @Published var phaseOffset: Double = 0           // 0-360°
+    @Published var pulseWidth: Double = 5            // ms
+    
+    // Multiple clock outputs
+    @Published var additionalClocks: [ClockOutput]   // Extra utgångar med olika divisioner
+    
+    enum SwingSource {
+        case `internal`              // Fast swing-värde
+        case groove                  // Från Snirklon groove template
+        case external                // CV-styrd swing
+    }
+}
+```
+
+##### HWCVOut.swift - Generisk CV-utgång
+```swift
+class HWCVOut: ObservableObject {
+    var id: UUID
+    var name: String
+    
+    @Published var output: CVOutput
+    @Published var source: CVSource                  // Vad som skickas ut
+    
+    // Range & Kalibrering
+    @Published var inputRange: ClosedRange<Double>   // Source range
+    @Published var outputRange: ClosedRange<Double>  // CV voltage range
+    @Published var curve: TransferCurve              // Linear, log, exp, S-curve
+    
+    // Slew/Glide
+    @Published var slewUp: Double = 0                // Rise time (ms)
+    @Published var slewDown: Double = 0              // Fall time (ms)
+    @Published var slewShape: SlewShape
+    
+    enum CVSource {
+        case modulator(UUID)         // Intern modulator
+        case audio(AudioTrack)       // Audio → CV
+        case parameter(String)       // Automationsparameter
+        case midi(MIDISource)        // MIDI → CV
+        case expression(String)      // MPE expression
+        case external(CVInput)       // CV In → CV Out (thru/processing)
+    }
+    
+    enum TransferCurve {
+        case linear
+        case logarithmic
+        case exponential
+        case sCurve
+        case custom([Double])        // Lookup table
+    }
+    
+    enum SlewShape {
+        case linear
+        case exponential
+        case logarithmic
+        case rc                      // RC-filter shape
+    }
+}
+```
+
+##### HWCVIn.swift - CV-ingång
+```swift
+class HWCVIn: ObservableObject {
+    var id: UUID
+    var name: String
+    
+    @Published var input: CVInput
+    @Published var destination: CVDestination        // Vart CV:n ska
+    
+    // Signal conditioning
+    @Published var inputRange: ClosedRange<Double>   // Förväntad spänning
+    @Published var offset: Double = 0                // DC offset korrigering
+    @Published var gain: Double = 1.0                // Förstärkning
+    @Published var invert: Bool = false              // Invertera signal
+    
+    // Noise gate
+    @Published var noiseGate: Double = 0             // Threshold
+    @Published var hysteresis: Double = 0.1          // Gate hysteresis
+    
+    // Quantization
+    @Published var quantizeToNotes: Bool = false     // CV → noter
+    @Published var scale: Scale?                     // Skala för kvantisering
+    
+    enum CVDestination {
+        case modulation(target: String)              // Modulera parameter
+        case notes                                   // CV → MIDI noter
+        case automation(parameter: String)           // CV → automation
+        case audio                                   // CV som audio
+        case clock                                   // CV → clock
+        case gate                                    // CV → gate/trigger
+    }
+}
+
+struct CVInput: Identifiable {
+    var id: UUID
+    var name: String
+    var audioChannel: Int                            // Fysisk ingångskanal
+    var calibration: CVCalibration
+    var currentVoltage: Double = 0.0
+    
+    // Monitoring
+    var peakVoltage: Double = 0.0
+    var averageVoltage: Double = 0.0
+}
+```
+
+---
+
+#### 3C.4 CV Processing (CV som Audio)
+
+##### CVProcessor.swift - Base processor
+```swift
+protocol CVProcessor: AnyObject {
+    var id: UUID { get }
+    var name: String { get }
+    var isEnabled: Bool { get set }
+    
+    /// Processa CV-buffer (sample-by-sample)
+    func process(_ input: CVSignal, sampleRate: Double) -> CVSignal
+    
+    /// Bypass-stöd
+    var bypass: Bool { get set }
+    
+    /// Wet/Dry mix
+    var mix: Double { get set }
+}
+```
+
+##### CVFilter.swift
+```swift
+class CVFilter: CVProcessor {
+    @Published var filterType: FilterType
+    @Published var frequency: Double                 // Hz eller modulerad
+    @Published var resonance: Double                 // 0-1
+    @Published var drive: Double                     // Pre-filter saturation
+    
+    // Modulering av filter
+    @Published var frequencyModSource: CVSource?
+    @Published var frequencyModAmount: Double = 0
+    
+    enum FilterType {
+        case lowpass(slope: Slope)
+        case highpass(slope: Slope)
+        case bandpass
+        case notch
+        case allpass
+        case comb(feedback: Double)
+        case formant(vowel: Vowel)
+    }
+    
+    enum Slope { case db6, db12, db24, db48 }
+    enum Vowel { case a, e, i, o, u }
+    
+    /// Användning: Jämna ut ojämna CV-signaler, ta bort brus
+}
+```
+
+##### CVDistortion.swift
+```swift
+class CVDistortion: CVProcessor {
+    @Published var distortionType: DistortionType
+    @Published var drive: Double                     // 0-1
+    @Published var tone: Double                      // Post-distortion filter
+    @Published var symmetry: Double                  // -1 till +1 (asymmetric)
+    
+    enum DistortionType {
+        case softClip
+        case hardClip
+        case foldback(threshold: Double)
+        case waveshaper(table: [Double])
+        case bitcrush(bits: Int, sampleRate: Double)
+        case rectify(type: RectifyType)
+    }
+    
+    enum RectifyType {
+        case fullWave       // |x|
+        case halfWavePos    // max(0, x)
+        case halfWaveNeg    // min(0, x)
+    }
+    
+    /// Användning: Transformera LFO-former, skapa komplexa modulations-signaler
+}
+```
+
+##### CVDelay.swift
+```swift
+class CVDelay: CVProcessor {
+    @Published var delayTime: Double                 // ms eller synkad
+    @Published var syncToTempo: Bool
+    @Published var tempoDiv: ClockDivision
+    @Published var feedback: Double                  // 0-1 (>1 för oscillation)
+    @Published var damping: Double                   // High-frequency damping
+    
+    // Modulation
+    @Published var timeModSource: CVSource?
+    @Published var timeModAmount: Double = 0
+    
+    /// Användning: Skapa fördröjda modulationer, echo-effekter på CV
+}
+```
+
+##### CVQuantizer.swift
+```swift
+class CVQuantizer: CVProcessor {
+    @Published var scale: Scale                      // Musikalisk skala
+    @Published var rootNote: Int                     // 0-11 (C till B)
+    @Published var octaveRange: Int                  // Antal oktaver
+    
+    // Trigger mode
+    @Published var triggerMode: TriggerMode
+    @Published var triggerInput: CVInput?            // Extern trigger
+    
+    // Glide
+    @Published var glideEnabled: Bool
+    @Published var glideTime: Double                 // ms
+    
+    enum TriggerMode {
+        case continuous      // Kvantisera varje sample
+        case triggered       // Kvantisera vid trigger
+        case gated           // Kvantisera medan gate är hög
+    }
+    
+    /// Användning: Konvertera fri CV till noter, skalbaserad modulation
+}
+```
+
+##### CVSlew.swift
+```swift
+class CVSlew: CVProcessor {
+    @Published var riseTime: Double                  // ms (0 = instant)
+    @Published var fallTime: Double                  // ms
+    @Published var shape: SlewShape                  // Linear, exp, log
+    @Published var linked: Bool                      // Rise = Fall
+    
+    // Track & Hold
+    @Published var trackAndHold: Bool
+    @Published var holdTrigger: CVInput?
+    
+    enum SlewShape {
+        case linear
+        case exponential
+        case logarithmic
+        case rc(time: Double)
+    }
+    
+    /// Användning: Portamento, envelope-formning, anti-click
+}
+```
+
+---
+
+#### 3C.5 Modulators (CV Powerhouse)
+
+##### CVModulator.swift - Base modulator
+```swift
+protocol CVModulator: AnyObject {
+    var id: UUID { get }
+    var name: String { get }
+    
+    /// Generera CV-signal
+    func generate(sampleCount: Int, sampleRate: Double) -> CVSignal
+    
+    /// Reset/retrigger
+    func reset()
+    func trigger()
+    func release()
+    
+    /// Output routing
+    var destinations: [ModulationDestination] { get set }
+    var amount: Double { get set }  // 0-1
+    var bipolar: Bool { get set }   // +/- eller 0-1
+}
+
+struct ModulationDestination {
+    var target: String              // Parameter path
+    var amount: Double              // Modulation depth
+    var curve: TransferCurve        // Response curve
+}
+```
+
+##### CVLFO.swift (Utökad)
+```swift
+class CVLFO: CVModulator {
+    // Grundläggande
+    @Published var shape: LFOShape
+    @Published var rate: Double                      // Hz (fri) eller division (synkad)
+    @Published var syncToTempo: Bool
+    @Published var tempoDiv: ClockDivision
+    
+    // Form
+    @Published var phase: Double                     // 0-360° startfas
+    @Published var pulseWidth: Double               // PWM för square (0-1)
+    @Published var skew: Double                     // Symmetri (-1 till +1)
+    @Published var smooth: Double                   // Corners rounding
+    
+    // Avancerat
+    @Published var retrigger: Bool                  // Reset vid gate
+    @Published var oneShot: Bool                    // Stoppa efter en cykel
+    @Published var fadeIn: Double                   // Fade-in tid (ms)
+    @Published var fadeOut: Double                  // Fade-out tid (ms)
+    
+    // Rate modulation
+    @Published var rateModSource: CVSource?
+    @Published var rateModAmount: Double = 0
+    
+    // Shape morphing
+    @Published var morphTarget: LFOShape?
+    @Published var morphAmount: Double = 0
+    
+    enum LFOShape: CaseIterable {
+        case sine
+        case triangle
+        case saw
+        case ramp
+        case square
+        case pulse(width: Double)
+        case random                                 // S&H
+        case smoothRandom                           // Interpolated random
+        case chaos                                  // Lorenz attractor
+        case custom([Double])                       // Wavetable
+    }
+}
+```
+
+##### CVCurves.swift - Freeform kurvor
+```swift
+class CVCurves: CVModulator {
+    @Published var points: [CurvePoint]             // Kurv-punkter
+    @Published var loop: Bool
+    @Published var loopStart: Int
+    @Published var loopEnd: Int
+    @Published var duration: Double                 // Total tid (ms eller beats)
+    @Published var syncToTempo: Bool
+    
+    struct CurvePoint {
+        var time: Double                            // 0-1 (relativ position)
+        var value: Double                           // -1 till +1
+        var curve: CurveType                        // Kurva TILL denna punkt
+        var tension: Double                         // Kurv-tension
+    }
+    
+    enum CurveType {
+        case linear
+        case exponential
+        case logarithmic
+        case sCurve
+        case step
+        case hold
+    }
+}
+```
+
+##### CVRandom.swift
+```swift
+class CVRandom: CVModulator {
+    @Published var mode: RandomMode
+    @Published var rate: Double                     // Hz eller synkad
+    @Published var syncToTempo: Bool
+    @Published var tempoDiv: ClockDivision
+    
+    // Range
+    @Published var min: Double                      // Min output
+    @Published var max: Double                      // Max output
+    @Published var quantize: Bool                   // Kvantisera till steg
+    @Published var steps: Int                       // Antal steg (om kvantiserad)
+    
+    // Probability
+    @Published var density: Double                  // Sannolikhet för förändring (0-1)
+    @Published var inertia: Double                  // Motstånd mot förändring
+    
+    // Slew
+    @Published var slew: Double                     // Interpoleringstid (ms)
+    
+    enum RandomMode {
+        case sampleAndHold      // Slumpa vid trigger
+        case smoothRandom       // Interpolerad random
+        case walk               // Random walk (brownian)
+        case probability        // Bernoulli trials
+        case lorentz            // Chaos attractor
+        case turing             // Turing machine pattern
+    }
+}
+```
+
+##### CVSteps.swift - Step sequencer modulator
+```swift
+class CVSteps: CVModulator {
+    @Published var steps: [StepValue]               // Steg-värden
+    @Published var length: Int                      // Aktiva steg (1-128)
+    @Published var rate: Double                     // Hz eller synkad
+    @Published var syncToTempo: Bool
+    @Published var tempoDiv: ClockDivision
+    
+    // Interpolation
+    @Published var interpolation: Interpolation     // .step, .linear, .smooth
+    @Published var glide: Double                    // Glide-tid per steg (ms)
+    
+    // Avancerat
+    @Published var direction: PlayDirection         // Forward, reverse, pingpong, random
+    @Published var probability: [Double]            // Probability per steg
+    
+    struct StepValue {
+        var value: Double                           // -1 till +1
+        var enabled: Bool
+        var probability: Double                     // 0-100%
+        var glide: Bool                             // Glide TILL detta steg
+    }
+    
+    enum Interpolation {
+        case step           // Hårt steg
+        case linear         // Linjär interpolation
+        case smooth         // Smoothstep
+        case exponential
+        case logarithmic
+    }
+    
+    enum PlayDirection {
+        case forward
+        case reverse
+        case pingPong
+        case random
+    }
+}
+```
+
+##### CVSidechain.swift - Audio → CV
+```swift
+class CVSidechain: CVModulator {
+    @Published var audioSource: AudioSource         // Input
+    @Published var mode: SidechainMode
+    
+    // Envelope follower
+    @Published var attack: Double                   // ms
+    @Published var release: Double                  // ms
+    @Published var sensitivity: Double              // Gain
+    
+    // Frequency detection
+    @Published var lowFreq: Double                  // Hz (bandpass)
+    @Published var highFreq: Double                 // Hz
+    
+    // Pitch detection
+    @Published var pitchTrackingEnabled: Bool
+    @Published var pitchRange: ClosedRange<Int>     // MIDI notes
+    
+    enum AudioSource {
+        case track(UUID)        // Spår-audio
+        case input(Int)         // Hardware input
+        case sidechain(UUID)    // Sidechain-ingång
+    }
+    
+    enum SidechainMode {
+        case envelopeFollower   // Amplitude → CV
+        case pitchTracker       // Pitch → CV (1V/oct)
+        case gateDetector       // Threshold → gate
+        case transientDetector  // Transienter → trigger
+        case spectral(band: Int) // Spektral-band → CV
+    }
+}
+```
+
+---
+
+#### 3C.6 MIDI ↔ CV Konvertering
+
+##### MIDItoCVConverter.swift
+```swift
+class MIDItoCVConverter: ObservableObject {
+    @Published var midiInput: MIDIInput
+    
+    // Outputs
+    var pitchCV: CVOutput?          // Note → 1V/oct
+    var gateCV: CVOutput?           // Note on/off → gate
+    var velocityCV: CVOutput?       // Velocity → CV
+    var aftertouchCV: CVOutput?     // Aftertouch → CV
+    var modWheelCV: CVOutput?       // CC1 → CV
+    var pitchBendCV: CVOutput?      // Pitch bend → CV
+    
+    // CC mapping
+    @Published var ccMappings: [CCtoCV]
+    
+    // MPE support
+    @Published var mpeEnabled: Bool
+    @Published var mpeChannels: ClosedRange<Int>    // MPE zone
+    var mpeOutputs: [MPEVoiceCV]                    // Per-voice CV
+    
+    struct CCtoCV {
+        var ccNumber: Int
+        var output: CVOutput
+        var range: ClosedRange<Double>              // Output voltage range
+        var curve: TransferCurve
+    }
+    
+    struct MPEVoiceCV {
+        var pitchCV: CVOutput
+        var gateCV: CVOutput
+        var pressureCV: CVOutput                    // Channel pressure
+        var slideCV: CVOutput                       // CC74 (MPE slide)
+        var pitchBendCV: CVOutput                   // Per-note pitch bend
+    }
+}
+```
+
+##### CVtoMIDIConverter.swift
+```swift
+class CVtoMIDIConverter: ObservableObject {
+    // CV Inputs
+    var pitchCV: CVInput?           // CV → Note pitch
+    var gateCV: CVInput?            // CV → Note on/off
+    var velocityCV: CVInput?        // CV → Velocity
+    var channelPressureCV: CVInput? // CV → Aftertouch
+    
+    // Output
+    @Published var midiOutput: MIDIOutput
+    @Published var midiChannel: Int
+    
+    // Quantization
+    @Published var quantizeToScale: Bool
+    @Published var scale: Scale?
+    
+    // CC outputs
+    @Published var cvToCCMappings: [CVtoCC]
+    
+    struct CVtoCC {
+        var input: CVInput
+        var ccNumber: Int
+        var range: ClosedRange<Int>                 // 0-127 range mapping
+        var curve: TransferCurve
+    }
+    
+    // Trigger mode
+    @Published var triggerMode: TriggerMode
+    
+    enum TriggerMode {
+        case gateToNote         // Gate hög = note on, låg = note off
+        case triggerToNote      // Trigger = note with fixed duration
+        case legato             // Monofon med legato
+    }
+}
+```
+
+##### MPEtoCVConverter.swift
+```swift
+class MPEtoCVConverter: ObservableObject {
+    @Published var mpeInput: MIDIInput
+    @Published var voiceCount: Int = 4              // Polyfoni (1-8)
+    
+    // Per voice outputs (upp till 8 voices)
+    var voices: [MPEVoiceOutputs]
+    
+    struct MPEVoiceOutputs {
+        var pitchCV: CVOutput                       // Note pitch + pitch bend
+        var gateCV: CVOutput                        // Gate
+        var pressureCV: CVOutput                    // Z-axis / pressure
+        var slideCV: CVOutput                       // Y-axis / slide (CC74)
+        var strikeCV: CVOutput                      // Initial velocity
+    }
+    
+    // Voice allocation
+    @Published var voiceAllocation: VoiceAllocation
+    @Published var pitchBendRange: Int = 48         // Semitones (MPE default)
+    
+    // Glide
+    @Published var glideMode: GlideMode
+    @Published var glideTime: Double                // ms
+    
+    enum GlideMode {
+        case off
+        case legato              // Endast vid överlappande noter
+        case always
+        case rate(Double)        // Konstant hastighet (V/s)
+    }
+}
+```
+
+---
+
+#### 3C.7 CV Routing & Patching
+
+##### CVRoutingMatrix.swift
+```swift
+class CVRoutingMatrix: ObservableObject {
+    @Published var patches: [CVPatch]
+    @Published var busses: [CVBus]
+    
+    // Alla tillgängliga källor och destinations
+    var availableSources: [CVSource]
+    var availableDestinations: [CVDestination]
+    
+    /// Skapa ny patch
+    func connect(source: CVSource, destination: CVDestination, amount: Double)
+    
+    /// Ta bort patch
+    func disconnect(patchId: UUID)
+    
+    /// Feedback-detection
+    func detectFeedbackLoops() -> [FeedbackLoop]
+    
+    /// Route CV genom processors
+    func insertProcessor(_ processor: CVProcessor, in patch: CVPatch)
+}
+
+struct CVPatch: Identifiable {
+    var id: UUID
+    var source: CVSource
+    var destination: CVDestination
+    var amount: Double                              // -1 till +1
+    var processors: [CVProcessor]                   // Processing chain
+    var enabled: Bool
+}
+
+struct CVBus: Identifiable {
+    var id: UUID
+    var name: String
+    var sources: [CVSource]                         // Multiple sources (mixed)
+    var destinations: [CVDestination]               // Multiple destinations
+    var mixMode: MixMode
+    
+    enum MixMode {
+        case sum            // Addera alla sources
+        case average        // Medelvärde
+        case max            // Maxvärde
+        case min            // Minvärde
+        case multiply       // Multiplicera (ring mod)
+    }
+}
+```
+
+##### CVFeedback.swift
+```swift
+class CVFeedback: ObservableObject {
+    @Published var enabled: Bool
+    @Published var source: CVSource
+    @Published var destination: CVDestination
+    @Published var amount: Double                   // Feedback-mängd (0-1, eller >1)
+    @Published var delay: Double                    // Fördröjning (samples)
+    @Published var damping: Double                  // High-frequency damping
+    
+    // Säkerhet
+    @Published var softLimit: Bool                  // Soft-clip feedback
+    @Published var dcBlock: Bool                    // Blockera DC-drift
+    
+    /// CV feedback loops - kraftfullt men potentiellt instabilt!
+    /// Kräver delay för att undvika infinite loop
+}
+```
+
+---
+
+#### 3C.8 CV Clock & Sync
+
+##### CVClockSystem.swift
+```swift
+class CVClockSystem: ObservableObject {
+    // Master clock
+    @Published var masterTempo: Double              // BPM
+    @Published var isRunning: Bool
+    
+    // Clock outputs
+    @Published var clockOutputs: [CVClockOutput]
+    
+    // Clock inputs
+    @Published var clockInputs: [CVClockInput]
+    
+    // Transport outputs
+    @Published var startOutput: CVOutput?           // Start trigger
+    @Published var stopOutput: CVOutput?            // Stop trigger
+    @Published var resetOutput: CVOutput?           // Reset trigger
+    @Published var runOutput: CVOutput?             // Gate (hög = playing)
+    
+    // Sync settings
+    @Published var syncSource: SyncSource
+    @Published var syncDestination: SyncDestination
+    
+    enum SyncSource {
+        case `internal`          // Snirklon master
+        case midiClock           // MIDI clock in
+        case cvClock(CVInput)    // CV clock in
+        case abletonLink         // Ableton Link
+    }
+    
+    enum SyncDestination {
+        case `internal`          // Endast internt
+        case midiClock           // Skicka MIDI clock
+        case cvClock             // Skicka CV clock
+        case both                // MIDI + CV
+        case all                 // MIDI + CV + Link
+    }
+}
+
+struct CVClockOutput: Identifiable {
+    var id: UUID
+    var name: String
+    var output: CVOutput
+    var division: ClockDivision
+    var multiplication: Int
+    var pulseWidth: Double                          // ms
+    var swing: Double                               // %
+    var phase: Double                               // ° offset
+}
+
+struct CVClockInput: Identifiable {
+    var id: UUID
+    var name: String
+    var input: CVInput
+    var threshold: Double                           // Trigger threshold
+    var division: ClockDivision                     // Input division
+    var ppqn: Int                                   // Pulses per quarter note
+}
+```
+
+---
+
+#### 3C.9 Avancerade Use Cases
+
+##### Polyfonisk CV (via MPE)
+```swift
+/// MPE → Multi-channel CV
+/// 4-8 röster med individuell pitch, gate, pressure, slide
+let mpeCV = MPEtoCVConverter()
+mpeCV.voiceCount = 4
+// Kräver 4x4 = 16 CV-utgångar för full MPE-support
+```
+
+##### CV-driven FX Routing
+```swift
+/// CV → Audio routing
+/// Exempel: CV styr wet/dry mix eller FX-kedjning
+let routeCV = HWCVIn()
+routeCV.destination = .automation(parameter: "effects.delay.mix")
+```
+
+##### Hybrid Modular + DAW
+```swift
+/// Eurorack LFO → DAW automation
+let lfoIn = HWCVIn()
+lfoIn.destination = .modulation(target: "synth.filter.cutoff")
+
+/// DAW envelope → Eurorack VCA
+let envOut = HWCVOut()
+envOut.source = .modulator(adsrEnvelope.id)
+```
+
+##### CV-baserad Generativ Musik
+```swift
+/// Chaos-baserad sequencing
+let chaosLFO = CVLFO()
+chaosLFO.shape = .chaos  // Lorenz attractor
+chaosLFO.destinations = [
+    ModulationDestination(target: "sequencer.pitch", amount: 0.5),
+    ModulationDestination(target: "sequencer.gate", amount: 0.3)
+]
+
+/// Turing Machine-pattern
+let turing = CVRandom()
+turing.mode = .turing
+turing.destinations = [
+    ModulationDestination(target: "track1.pitch", amount: 1.0)
+]
+```
+
+##### CV Feedback Loops
+```swift
+/// Självmodulerande system
+let feedback = CVFeedback()
+feedback.source = .modulator(lfo.id)
+feedback.destination = .modulator(lfo.id)  // LFO rate
+feedback.amount = 0.3
+feedback.delay = 10  // samples delay för stabilitet
+```
+
+---
+
+#### 3C.10 Stödda Hardware
+
+| Gränssnitt | CV Out | CV In | Protokoll | Latens |
+|------------|--------|-------|-----------|--------|
+| Expert Sleepers ES-9 | 16 | 6 | USB | <1ms |
+| Expert Sleepers ES-8 | 8 | 4 | USB | <1ms |
+| Expert Sleepers ES-3 | 8 | - | ADAT | <2ms |
+| MOTU UltraLite mk5 | 10 | 2 | USB | <1ms |
+| MOTU 828es | 28 | 28 | USB/TB | <1ms |
+| RME Fireface UCX II | 8 | 8 | USB | <1ms |
+| Befaco VCMC | 8 | - | USB MIDI | <3ms |
+| Endorphin.es Shuttle Control | 16 | - | USB | <1ms |
+| Intellijel Audio Interface II | 4 | 4 | USB | <1ms |
+
+---
+
+#### 3C.11 Snirklon vs Bitwig vs Ableton (CV-jämförelse)
+
+| Funktion | Snirklon | Bitwig | Ableton |
+|----------|----------|--------|---------|
+| CV som Audio | ✅ | ✅ | ❌ |
+| Sample-accurate CV | ✅ | ✅ | ❌ |
+| CV In | ✅ | ✅ | ⚠️ (Max) |
+| CV Out | ✅ | ✅ | ⚠️ (Max) |
+| HW CV Devices | ✅ | ✅ | ❌ |
+| CV Processing (FX) | ✅ | ✅ | ❌ |
+| CV Feedback | ✅ | ✅ | ❌ |
+| MPE → CV | ✅ | ✅ | ❌ |
+| Per-synth Calibration | ✅ | ✅ | ❌ |
+| CV Clock | ✅ | ✅ | ❌ |
+| Modular Modulators | ✅ | ✅ | ⚠️ |
+| CV Routing Matrix | ✅ | ✅ | ❌ |
+
+---
+
 ### Fas 4: Ableton Link Integration
 
 #### 4.1 Link Session (Core/Sync/)
@@ -1501,17 +2442,50 @@ struct PatternBrowserView: View {
 - [ ] Transport-synkronisering
 - [ ] Song Position Pointer
 
-### Sprint 4 (Vecka 7-8): CV/Gate/ADSR System
-- [ ] CV Engine med CoreAudio
+### Sprint 4 (Vecka 7-8): CV/Gate/ADSR System (Grundläggande)
+- [ ] CV Engine med CoreAudio (sample-accurate)
+- [ ] CV som Audio arkitektur (32-bit float)
 - [ ] Pitch CV (1V/okt) med kalibrering
 - [ ] Gate/Trigger-generering
 - [ ] ADSR Envelope Generator
 - [ ] CV Clock Output med divisioner
-- [ ] CV LFO-modulatorer
+- [ ] CV LFO-modulatorer (basic)
 - [ ] Portamento/Glide
-- [ ] Multi-kanal CV output
+- [ ] Multi-kanal CV output (upp till 16)
 
-### Sprint 5 (Vecka 9-10): UI Grund
+### Sprint 4B (Vecka 8-9): HW CV Devices
+- [ ] HWCVInstrument - komplett instrument-interface
+- [ ] HWCVClock - analog clock med divisioner/multipliers
+- [ ] HWCVOut - generisk CV-utgång med routing
+- [ ] HWCVIn - CV-ingång med signal conditioning
+- [ ] Per-synth kalibrering (Moog, Behringer, Eurorack)
+- [ ] Voltage standard support (V/oct, Hz/V, Oct/V)
+- [ ] MPE → CV konvertering (polyfonisk CV)
+
+### Sprint 4C (Vecka 9-10): CV Processing & Modulators
+- [ ] CVProcessor base class
+- [ ] CVFilter (LP, HP, BP, comb, formant)
+- [ ] CVDistortion (soft/hard clip, foldback, waveshaper)
+- [ ] CVDelay (tempo-synkad, feedback)
+- [ ] CVQuantizer (skala-kvantisering, trigger modes)
+- [ ] CVSlew (portamento, anti-click)
+- [ ] Utökad CVLFO (chaos, morphing, S&H)
+- [ ] CVCurves (freeform, loop, spline)
+- [ ] CVRandom (S&H, walk, turing, lorentz)
+- [ ] CVSteps (step sequencer modulator)
+- [ ] CVSidechain (audio → CV, pitch tracking)
+
+### Sprint 4D (Vecka 10-11): CV Routing & MIDI↔CV
+- [ ] CVRoutingMatrix (flexibel patching)
+- [ ] CVBus (multiple sources/destinations)
+- [ ] CVFeedback (kontrollerade feedback loops)
+- [ ] MIDItoCVConverter (note, gate, velocity, CC, pitch bend)
+- [ ] CVtoMIDIConverter (CV → MIDI notes, CC)
+- [ ] MPEtoCVConverter (full MPE polyfonisk CV)
+- [ ] CVClockSystem (master/slave, divisions)
+- [ ] Transport CV (start, stop, reset, run)
+
+### Sprint 5 (Vecka 11-12): UI Grund
 - [ ] SwiftUI huvudgränssnitt
 - [ ] Pattern editor med step-grid
 - [ ] Transport-kontroller
@@ -1624,7 +2598,7 @@ dependencies: [
 14. **Swing** - Global och per-spår
 15. **Transpose** - Global och per-spår/pattern
 
-### CV/Gate/Clock-funktioner (utökad):
+### CV/Gate/Clock-funktioner (grundläggande):
 
 16. **CV Pitch Output** - 1V/oktav med kalibrering
 17. **Gate Output** - Gate/Trigger per steg
@@ -1636,6 +2610,64 @@ dependencies: [
 23. **Portamento/Glide** - Legato och always-läge
 24. **Multi-channel CV** - Upp till 16 CV-kanaler
 25. **CV Calibration** - 1V/okt kalibrering per utgång
+
+### Avancerat CV-system (Bitwig-inspirerat):
+
+26. **CV = Audio** - Sample-accurate 32-bit CV som audio-signaler
+27. **HW CV Instrument** - Komplett instrument-interface (pitch, gate, velocity, aftertouch, mod)
+28. **HW CV Clock** - Analog clock med divisions, multipliers, swing, transport
+29. **HW CV Out** - Generisk CV-utgång med source routing och slew
+30. **HW CV In** - CV-ingång med conditioning, quantization, destination routing
+31. **Per-synth Calibration** - Kalibreringsprofiler för Moog, Behringer, Eurorack, etc.
+32. **Voltage Standards** - 1V/oct, Hz/V, Oct/V support
+
+### CV Processing (CV som Audio):
+
+33. **CV Filter** - LP, HP, BP, notch, comb, formant filter på CV
+34. **CV Distortion** - Soft/hard clip, foldback, waveshaper, bitcrush på CV
+35. **CV Delay** - Tempo-synkad delay med feedback på CV-signaler
+36. **CV Quantizer** - Skala-kvantisering med trigger modes och glide
+37. **CV Slew** - Rise/fall slew limiter, track & hold
+38. **Audio → CV Processing** - Distortera LFO, komprimera envelope, delay pitch-CV
+
+### CV Modulators (Powerhouse):
+
+39. **Advanced LFO** - Chaos (Lorenz), morphing, custom wavetable, rate mod
+40. **CV Curves** - Freeform kurvor med loop, spline interpolation
+41. **CV Random** - S&H, smooth random, walk, turing machine, probability
+42. **CV Steps** - Step sequencer som modulator med interpolation
+43. **CV Sidechain** - Audio → CV envelope follower, pitch tracker, transient detector
+44. **Modulation Matrix** - Flexibel routing med depth och curve per destination
+
+### MIDI ↔ CV Konvertering:
+
+45. **MIDI → CV** - Note, velocity, aftertouch, CC, pitch bend till CV
+46. **CV → MIDI** - CV pitch/gate/velocity till MIDI notes och CC
+47. **MPE → CV** - Full MPE polyfonisk CV (pitch, gate, pressure, slide per röst)
+48. **CC Mapping** - Valfri CC till/från CV med curve och range
+
+### CV Routing & Patching:
+
+49. **CV Routing Matrix** - Flexibel source → destination patching
+50. **CV Busses** - Multiple sources/destinations med mix modes (sum, max, multiply)
+51. **CV Feedback** - Kontrollerade feedback loops med delay och damping
+52. **CV-driven FX** - CV styr automation, wet/dry, routing
+53. **CV Performance** - CV-baserad live performance automation
+
+### CV Clock & Transport:
+
+54. **CV Clock System** - Master/slave med multiple outputs
+55. **Clock Divisions** - Oberoende division per utgång
+56. **Transport CV** - Start, stop, reset, run som CV-signaler
+57. **Swing via CV** - CV-styrd swing amount
+58. **External Clock Sync** - CV clock input med threshold och PPQN
+
+### Avancerade CV Use Cases:
+
+59. **Polyfonisk CV** - MPE → 4-8 röster med individuell CV per röst
+60. **Hybrid Modular+DAW** - Eurorack LFO → DAW automation, DAW env → Eurorack
+61. **CV Generativ Musik** - Chaos-baserad sequencing, Turing patterns
+62. **CV Feedback Loops** - Självmodulerande system, complex oscillation
 
 ### Drum Machine MIDI Maps:
 
