@@ -108,14 +108,70 @@ const result = await client.generateSequence({
 
 ## Stödda CV-gränssnitt
 
-| Gränssnitt | CV-utgångar | Anslutning |
-|------------|-------------|------------|
-| Expert Sleepers ES-8 | 8 | USB |
-| Expert Sleepers ES-9 | 16 | USB |
-| Expert Sleepers ES-3 | 8 | ADAT |
-| MOTU UltraLite mk5 | 10 | USB |
-| MOTU 828es | 28 | USB/Thunderbolt |
-| RME Fireface UCX II | 8 | USB |
+### 🌟 Expert Sleepers ES-9 (Primärt stöd)
+
+| Specifikation | Värde |
+|---------------|-------|
+| **CV Outputs** | 8 DC-kopplade (±10V) |
+| **CV Inputs** | 4 DC-kopplade (±10V) |
+| **ADAT Expansion** | +8 ut (ES-3) / +8 in (ES-6) |
+| **Latens** | <1ms (64 samples @ 48kHz) |
+| **Presets** | Mono Synth, 4-Voice Poly, Drums, MPE |
+
+### Övriga gränssnitt
+
+| Gränssnitt | CV Out | CV In | Anslutning |
+|------------|--------|-------|------------|
+| Expert Sleepers ES-8 | 8 | 4 | USB |
+| Expert Sleepers ES-3 | 8 | - | ADAT (via ES-9) |
+| Expert Sleepers ES-6 | - | 8 | ADAT (via ES-9) |
+| MOTU UltraLite mk5 | 10 | 2 | USB |
+| MOTU 828es | 28 | 28 | USB/Thunderbolt |
+| RME Fireface UCX II | 8 | 8 | USB |
+
+## 🔌 Avancerat CV-system (Bitwig-inspirerat)
+
+### CV = Audio
+- **Sample-accurate** - Full 32-bit floating point precision
+- **Processbar** - Filter, delay, distortion på CV-signaler
+- **Flexibel routing** - CV Routing Matrix med feedback-stöd
+
+### CV Processing
+| Processor | Användning |
+|-----------|------------|
+| **CVFilter** | LP/HP/BP/comb på CV |
+| **CVDistortion** | Waveshaping, foldback |
+| **CVDelay** | Tempo-synkad delay på CV |
+| **CVQuantizer** | CV → skalkvantiserade noter |
+| **CVSlew** | Portamento, anti-click |
+
+### CV Modulators
+- **LFO** - Chaos (Lorenz), morphing, custom wavetable
+- **Curves** - Freeform kurvor med loop
+- **Random** - S&H, turing machine, walk
+- **Steps** - Step sequencer som modulator
+- **Sidechain** - Audio → CV (pitch tracking, envelope follower)
+
+## 🥁 Drum Machine MIDI Maps
+
+| Trummaskin | Spår | Features |
+|------------|------|----------|
+| **Roland TR-909** | 11 | Tune CC, Decay CC, Accent |
+| **Elektron Analog Rytm** | 12 | Full parameter control |
+| **LinnDrum** | 16 | LM-1/LM-2 kompatibel |
+| **Kawai R-100** | 16 | Alla PCM-ljud |
+| **Vermona DRM1 MKIII** | 8 | Tune/Decay CC per spår |
+
+## 🎵 128-stegs Pattern Library
+
+| Genre | Patterns | Tempo | Subgenrer |
+|-------|----------|-------|-----------|
+| **Darkwave** | 100+ | 85-135 | Cold Wave, Gothic, Deathrock, Post-Punk |
+| **Synthpop** | 100+ | 85-145 | Electropop, Futurepop, New Wave |
+| **EBM** | 100+ | 95-160 | Classic, Aggrotech, Dark Electro, New Beat |
+| **Techno** | 100+ | 120-155 | Minimal, Detroit, Berlin, Industrial, Acid |
+
+**Totalt:** 400+ patterns, 800+ variationer, 600+ fills
 
 ---
 

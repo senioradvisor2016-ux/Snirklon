@@ -3224,4 +3224,188 @@ dependencies: [
 
 ---
 
+## Appendix A: Projektgranskning & Gap-analys
+
+### A.1 Inkonsekvenser mellan plan och implementation
+
+#### Swift StepModel behöver uppdateras:
+```swift
+// NUVARANDE (MakeNoiseSequencer/Models/StepModel.swift)
+struct StepModel {
+    var isOn: Bool
+    var note: Int
+    var velocity: Int
+    var length: Int
+    var timing: Int
+    var probability: Int
+    var repeat_: Int        // ⚠️ Bör vara Ratchet
+}
+
+// BORDE VARA (enligt plan.md)
+struct StepModel {
+    var enabled: Bool
+    var note: Note?
+    var velocity: Int?
+    var gateTime: Double?
+    var probability: Int
+    var condition: StepCondition    // ❌ SAKNAS
+    var ratchet: Ratchet?           // ❌ SAKNAS (repeat_ är förenklad)
+    var microTiming: Int
+    var chord: [Int]?               // ❌ SAKNAS
+    var slide: Bool                 // ❌ SAKNAS
+    var accent: Bool                // ❌ SAKNAS
+    var parameterLocks: [ParameterLock]  // ❌ SAKNAS
+}
+```
+
+#### Swift TrackModel behöver uppdateras:
+```swift
+// NUVARANDE
+struct TrackModel {
+    var name: String
+    var color: Color
+    var midiChannel: Int
+    var isMuted: Bool
+    var isSolo: Bool
+    var length: Int
+    var steps: [StepModel]
+}
+
+// BORDE LÄGGA TILL
+struct TrackModel {
+    // ... befintliga ...
+    var type: TrackType             // ❌ SAKNAS
+    var transpose: Int              // ❌ SAKNAS
+    var gateTime: Double            // ❌ SAKNAS
+    var outputPort: MIDIOutputPort  // ❌ SAKNAS
+    var p3Modulators: [P3Modulator] // ❌ SAKNAS
+}
+```
+
+### A.2 Kritisk saknad funktionalitet
+
+#### Prioritet 1 - Kritisk (Krävs för grundläggande funktion)
+
+| Funktion | Fil som behövs | Beskrivning |
+|----------|----------------|-------------|
+| CoreMIDI Output | `Core/MIDI/MIDIEngine.swift` | Faktisk MIDI-utmatning |
+| CoreAudio CV | `Core/CV/CVEngine.swift` | ES-9/CV-utmatning |
+| Högprecisionstimer | `Core/Engine/ClockSource.swift` | Ersätt Timer med AudioUnit |
+
+#### Prioritet 2 - Hög (Cirklon-paritet)
+
+| Funktion | Beskrivning |
+|----------|-------------|
+| Step Conditions | Fill, A/B, probability, etc. |
+| Ratchets | Rolls med velocity ramp |
+| Parameter Locks | Per-step CC/NRPN |
+| P3 Modulators | LFO/Env per spår |
+| Polymetriska spår | Olika längd per spår |
+
+#### Prioritet 3 - Medium (Fulla funktioner)
+
+| Funktion | Beskrivning |
+|----------|-------------|
+| Song Mode | Pattern chaining |
+| Ableton Link | Tempo/fas-sync |
+| 64 spår | Utöka från 8 |
+| CV Input | Extern CV → modulation |
+
+### A.3 TypeScript ↔ Swift Integration (SAKNAS)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         NUVARANDE                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   TypeScript                           Swift                     │
+│   ┌────────────────┐                  ┌────────────────┐        │
+│   │ Claude Client  │      ???         │ SequencerStore │        │
+│   │ Pattern Gen    │ ──────────────── │ UI Views       │        │
+│   │ Drum Types     │   INGEN BRYGGA   │ Models         │        │
+│   └────────────────┘                  └────────────────┘        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                         BEHÖVS                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   TypeScript                           Swift                     │
+│   ┌────────────────┐                  ┌────────────────┐        │
+│   │ Claude Client  │   WebSocket/     │ SequencerStore │        │
+│   │ Pattern Gen    │ ──────────────── │ UI Views       │        │
+│   │ Drum Types     │   REST API       │ Models         │        │
+│   └────────────────┘   or IPC         └────────────────┘        │
+│          │                                     │                 │
+│          └───────── Shared JSON Schema ────────┘                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Lösningsförslag: Shared Schema
+
+```typescript
+// shared/types/Pattern.schema.ts
+export const PatternSchema = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  type: "object",
+  properties: {
+    id: { type: "string", format: "uuid" },
+    name: { type: "string" },
+    tracks: { type: "array", items: { $ref: "#/definitions/Track" } },
+    // ... etc
+  }
+};
+
+// Generera Swift Codable från samma schema
+// Generera TypeScript types från samma schema
+```
+
+### A.4 README.md Uppdateringar Behövs
+
+Följande saknas i README.md:
+
+1. **ES-9 Full Integration**
+   - 8 DC-coupled outputs + 8 ADAT
+   - 4 DC-coupled inputs + 8 ADAT
+   - Presets för Mono/Poly/Drums/MPE
+
+2. **Avancerat CV-system**
+   - CV = Audio (32-bit, sample-accurate)
+   - CV Processing (filter, delay, distortion)
+   - CV Routing Matrix
+   - CV Feedback
+
+3. **Drum Machine MIDI Maps**
+   - TR-909, Analog Rytm, LinnDrum, Kawai R-100, Vermona DRM1
+
+4. **128-stegs Pattern Library**
+   - 400+ patterns för Darkwave, Synthpop, EBM, Techno
+
+5. **Saknade sekvenser i projektstruktur**
+   - `Core/MIDI/` - MIDI engine
+   - `Core/CV/` - CV engine
+   - `Core/Sync/` - Ableton Link
+
+### A.5 Sprint-prioritering (Reviderad)
+
+#### Omedelbart (Sprint 0 - Denna vecka)
+- [ ] Uppdatera Swift StepModel med saknade fält
+- [ ] Uppdatera Swift TrackModel med saknade fält
+- [ ] Uppdatera README.md med ny funktionalitet
+- [ ] Definiera JSON-schema för TypeScript ↔ Swift
+
+#### Nästa (Sprint 1)
+- [ ] Implementera CoreMIDI i Swift
+- [ ] Implementera högprecisionstimer (AudioUnit)
+- [ ] Grundläggande Step Conditions
+
+#### Därefter (Sprint 2)
+- [ ] CVEngine för ES-9
+- [ ] Ratchets/Rolls
+- [ ] Parameter Locks
+
+---
+
 *Senast uppdaterad: December 2024*
