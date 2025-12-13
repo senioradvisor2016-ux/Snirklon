@@ -448,4 +448,241 @@ Testa olika prompt-strategier:
 
 ---
 
+---
+
+## 🎹 Del 8: Avancerad Synth-integration
+
+### 8.1 Synth Sequencer Features
+
+Claude kan generera kompletta synth-sekvenser med:
+
+```typescript
+interface SynthNote {
+  pitch: number;           // MIDI note
+  velocity: number;        // 0-127
+  start: number;          // Position in beats
+  duration: number;       // Length in beats
+  slide?: boolean;        // Portamento to next note
+  accent?: boolean;       // Extra velocity/filter
+  filterOffset?: number;  // Per-note filter mod
+  automation?: [];        // Parameter automation
+}
+```
+
+### 8.2 Patch Design med AI
+
+Låt Claude designa synth-patches från beskrivningar:
+
+```typescript
+const patch = await client.designSynthPatch(
+  "Warm analog pad with slow attack, subtle detuning, and chorus"
+);
+
+// Claude returnerar komplett patch:
+// - Oscillator config (waveform, detune, levels)
+// - Filter settings (type, cutoff, resonance, envelope)
+// - ADSR envelopes (amp, filter, mod)
+// - LFO routing
+// - Effects chain
+// - Voice mode (poly/mono/unison)
+```
+
+### 8.3 Intelligent Arpeggiator
+
+```typescript
+// Ge Claude ackord, få intelligent arpeggio
+const arp = await client.generateArpeggio(
+  [60, 64, 67, 72],  // Cmaj7
+  {
+    prompt: "Create evolving arpeggio that builds tension",
+    context: { bpm: 128, key: 'C', scale: 'major' }
+  }
+);
+
+// Claude bestämmer:
+// - Direction (up, down, up-down, random, pattern)
+// - Octave range
+// - Gate length per step
+// - Velocity patterns
+// - Probability for variation
+```
+
+---
+
+## 🥁 Del 9: Avancerad Drum-integration
+
+### 9.1 Drum Sequencer Features
+
+Claude förstår trummors nyanser:
+
+```typescript
+interface DrumStep {
+  active: boolean;
+  velocity: number;        // Crucial for groove!
+  nudge: number;           // Micro-timing (-50 to +50 ms)
+  probability: number;     // 0-1, chance of playing
+  flam?: { time, velocity };
+  roll?: { divisions, velocityRamp };
+  paramLocks?: Partial<DrumSoundParams>;  // Per-step sound mods
+}
+```
+
+### 9.2 Style-baserad Generation
+
+Claude känner till 25+ genrer:
+
+```typescript
+const STYLE_KNOWLEDGE = {
+  techno: {
+    kickPattern: 'four-on-floor',
+    hihatDensity: 'normal',
+    swing: [0, 0.1],
+    characteristics: ['driving', 'mechanical', 'hypnotic']
+  },
+  jungle: {
+    kickPattern: 'broken, syncopated',
+    hihatDensity: 'dense',
+    swing: [0.1, 0.2],
+    characteristics: ['chaotic', 'organic', 'breakbeat']
+  },
+  // ... 23 fler stilar
+};
+
+// Generera i specifik stil
+await client.generateDrumSequence({
+  prompt: "Create a groove",
+  style: 'jungle',
+  kitId: 'kit_acoustic'
+});
+```
+
+### 9.3 Euclidean Rhythm Integration
+
+Claude kan kombinera Euclidean algoritmer med musikalisk intelligens:
+
+```typescript
+// Matematisk grund + musikalisk tolkning
+const pattern = await client.generateEuclideanPattern([
+  { instrument: 'kick', euclidean: { hits: 4, steps: 16, rotation: 0 } },
+  { instrument: 'snare', euclidean: { hits: 3, steps: 8, rotation: 1 } },
+  { instrument: 'hihat', euclidean: { hits: 7, steps: 12, rotation: 2 } },
+], context);
+
+// Claude lägger till:
+// - Velocity variation för groove
+// - Micro-timing för human feel
+// - Accent patterns
+// - Musikalisk koherens mellan spåren
+```
+
+### 9.4 Style Transform
+
+Transformera patterns mellan genrer:
+
+```typescript
+// Techno → Jungle transformation
+const transformed = await client.styleTransform(technoPattern, 'jungle');
+
+// Claude analyserar:
+// 1. Vad som definierar källstilen
+// 2. Vad som definierar målstilen
+// 3. Hur man bevarar igenkänning
+// 4. Vad som måste ändras
+```
+
+### 9.5 Intelligent Fills
+
+```typescript
+// Generera fills baserat på kontext
+await client.generateFill(pattern, 'buildup');
+// → Snare rolls, ökande densitet, stigande energi
+
+await client.generateFill(pattern, 'breakdown');
+// → Strippade element, space, tension
+
+await client.generateFill(pattern, 'drop');
+// → Maximum impact, alla element tillbaka
+```
+
+---
+
+## 🎼 Del 10: Kombinerad Synth + Drums
+
+### 10.1 Full Arrangement Generation
+
+```typescript
+const arrangement = await client.generateFullArrangement(
+  "Dark techno track: minimal intro → building tension → heavy drop → atmospheric outro",
+  4  // sections
+);
+
+// Returnerar:
+// - 4 synth-sekvenser (bass, lead, pad, etc.)
+// - 4 drum-patterns (anpassade till varje sektion)
+// - Arrangement notes (hur allt hänger ihop)
+```
+
+### 10.2 AI Jam Session
+
+Real-time musikalisk dialog:
+
+```typescript
+// Du spelar en bassline
+const myBass = createBassSequence();
+
+// AI svarar med kompletterande trummor
+const response = await client.jamSession(
+  { type: 'synth', sequence: myBass },
+  'drums'
+);
+
+// Eller AI svarar med både synth och drums
+const fullResponse = await client.jamSession(
+  { type: 'drums', sequence: myDrums },
+  'both'
+);
+```
+
+### 10.3 Frequency-aware Generation
+
+Claude förstår frekvensseparering:
+
+```
+Prompt: "Skapa bas och trummor som inte krockar"
+
+Claude analyserar:
+- Kick: Sub-frequencies (30-80Hz)
+- Bass: Low-mid (80-250Hz) 
+- → Sidechain-suggestion
+- → EQ-rekommendationer
+- → Rytmisk komplementaritet
+```
+
+---
+
+## 📋 Quick Reference: API Endpoints
+
+### Synth
+| Metod | Beskrivning |
+|-------|-------------|
+| `generateSynthSequence()` | Skapa synth-sekvens |
+| `generateArpeggio()` | Skapa arpeggio från ackord |
+| `designSynthPatch()` | Designa patch från beskrivning |
+
+### Drums
+| Metod | Beskrivning |
+|-------|-------------|
+| `generateDrumSequence()` | Skapa drum pattern |
+| `generateEuclideanPattern()` | Euclidean med AI-polish |
+| `generateFill()` | Skapa fill (buildup/breakdown/drop) |
+| `styleTransform()` | Konvertera mellan genrer |
+
+### Combined
+| Metod | Beskrivning |
+|-------|-------------|
+| `generateFullArrangement()` | Komplett multi-sektion |
+| `jamSession()` | AI svarar på din input |
+
+---
+
 *Genererat för Snirklon - Ta sequencing till nya kreativa höjder med Claude!*

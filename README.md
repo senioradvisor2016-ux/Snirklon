@@ -77,16 +77,137 @@ const result = await client.generateSequence({
 
 ```
 src/
-├── claude/
-│   ├── index.ts       # Huvudexport
-│   ├── client.ts      # Claude API-klient
-│   ├── types.ts       # TypeScript-typer
-│   ├── personas.ts    # Musikaliska personas
-│   ├── prompts.ts     # Prompt engineering
-│   └── validators.ts  # Validering och parsing
+├── claude/              # Core AI integration
+│   ├── index.ts
+│   ├── client.ts        # Claude API-klient
+│   ├── types.ts         # Bas-typer
+│   ├── personas.ts      # 12 musikaliska personas
+│   ├── prompts.ts       # Prompt engineering
+│   └── validators.ts    # Validering
+│
+├── synth/               # Synth Sequencer
+│   ├── index.ts
+│   ├── types.ts         # Oscillatorer, filter, LFO, etc.
+│   └── presets.ts       # Fördefinierade patches
+│
+├── drums/               # Drum Sequencer  
+│   ├── index.ts
+│   ├── types.ts         # Drum sounds, kits, patterns
+│   └── patterns.ts      # Kits, grooves, styles
+│
+├── sequencer/           # Unified Controller
+│   ├── index.ts
+│   └── client.ts        # Kombinerad synth+drum klient
+│
 └── examples/
-    └── basic-usage.ts # Användningsexempel
+    ├── basic-usage.ts
+    └── synth-and-drums.ts
 ```
+
+---
+
+## 🎹 Synth Sequencer
+
+### Features
+- **Oscillatorer**: Sine, saw, square, pulse, noise, wavetable, FM
+- **Filter**: LP, HP, BP, notch, comb, formant med envelope
+- **Envelopes**: ADSR + multi-stage med kurvor
+- **LFO**: 3 st med sync, olika former, fria destinations
+- **Modulation Matrix**: Flexibel routing
+- **Effekter**: Delay, reverb, chorus, distortion, bitcrusher, etc.
+- **Voice Modes**: Poly, mono (legato), unison
+- **Per-note**: Slide, accent, filter offset, automation
+
+### Presets
+| Kategori | Presets |
+|----------|---------|
+| Bass | `sub_bass`, `acid_bass`, `reese_bass` |
+| Lead | `classic_lead`, `screaming_lead` |
+| Pad | `warm_pad`, `dark_pad` |
+| Pluck | `digital_pluck`, `bell_tone` |
+| FX | `noise_sweep` |
+
+---
+
+## 🥁 Drum Sequencer
+
+### Features
+- **Kits**: 808, 909, Acoustic, hybrid
+- **Per-step**: Velocity, nudge, probability, parameter locks
+- **Flams & Rolls**: Med velocity ramp
+- **Euclidean**: Automatisk rytmgenerering
+- **Polymetri**: Olika längder per spår
+- **Groove Templates**: MPC 60, SP-1200, shuffle
+- **Fills**: Buildup, breakdown, transition, drop
+- **Style Transform**: Konvertera mellan genrer
+
+### Drum Styles (25+)
+`techno`, `house`, `deep_house`, `minimal`, `trance`, `drum_and_bass`, `jungle`, `dubstep`, `breakbeat`, `trap`, `hip_hop`, `funk`, `jazz`, `rock`, `pop`, `latin`, `afrobeat`, `industrial`, `glitch`, `polyrhythmic`...
+
+### Classic Patterns
+- `four_on_floor` - House/Techno
+- `breakbeat_basic` - Hip-hop/Breaks  
+- `dnb_basic` - Drum & Bass
+- `trap_basic` - Trap
+- `techno_minimal` - Minimal Techno
+
+---
+
+## 🔮 Kreativa AI-funktioner
+
+### För Synth
+```typescript
+// Generera sekvens
+await client.generateSynthSequence({
+  prompt: 'Acid bassline med slides',
+  context,
+  patchHint: 'acid_bass',
+});
+
+// Designa patch från beskrivning
+await client.designSynthPatch(
+  'Aggressiv lead med metallisk karaktär'
+);
+
+// Generera arpeggio
+await client.generateArpeggio([60, 64, 67, 72], request);
+```
+
+### För Drums
+```typescript
+// Generera pattern
+await client.generateDrumSequence({
+  prompt: 'Driving techno beat',
+  style: 'techno',
+  kitId: 'kit_909',
+});
+
+// Euclidean rhythms
+generateEuclidean({ hits: 5, steps: 16, rotation: 0 });
+
+// Style transform
+await client.styleTransform(technoPattern, 'jungle');
+
+// Generate fills
+await client.generateFill(pattern, 'buildup');
+```
+
+### Kombinerat
+```typescript
+// Full arrangement
+await client.generateFullArrangement(
+  'Mörk techno som bygger till klimax',
+  4  // sections
+);
+
+// Jam session - AI svarar på din input
+await client.jamSession(
+  { type: 'synth', sequence: bassLine },
+  'drums'  // AI svarar med trummor
+);
+```
+
+---
 
 ## Licens
 
