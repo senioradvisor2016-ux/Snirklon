@@ -4810,4 +4810,1223 @@ extension Array {
 
 ---
 
+## Appendix C: Projekt, Patterns & Pattern Chains
+
+### C.1 Projektstruktur - Filformat
+
+#### Snirklon Filformat
+
+| Typ | Extension | Innehåll |
+|-----|-----------|----------|
+| **Projekt** | `.snirklon` | Komplett projekt med alla patterns, songs, instruments |
+| **Pattern** | `.snpat` | Enskilt pattern (exporterbart) |
+| **Song** | `.snsong` | Song med pattern chains |
+| **Kit** | `.snkit` | Drum kit konfiguration |
+| **Preset** | `.snpre` | Instrument/synth preset |
+
+#### Mappstruktur
+
+```
+~/Documents/Snirklon/
+├── Projects/
+│   ├── MyProject.snirklon
+│   ├── LiveSet2024.snirklon
+│   └── ...
+├── Patterns/
+│   ├── User/
+│   │   ├── MyBassline.snpat
+│   │   └── ...
+│   └── Factory/
+│       ├── Darkwave/
+│       ├── Synthpop/
+│       ├── EBM/
+│       └── Techno/
+├── Songs/
+│   └── ...
+├── Kits/
+│   └── ...
+├── Presets/
+│   └── ...
+├── Backups/
+│   └── AutoSave/
+└── Export/
+    ├── MIDI/
+    └── Audio/
+```
+
+---
+
+### C.2 Projektmodell
+
+```swift
+/// Komplett projektfil
+struct SnirklonProject: Codable, Identifiable {
+    var id: UUID
+    var version: String = "1.0"
+    var name: String
+    var created: Date
+    var modified: Date
+    var author: String?
+    
+    // Globala inställningar
+    var globalSettings: GlobalSettings
+    
+    // Innehåll
+    var patterns: [PatternModel]         // Alla patterns (upp till 256)
+    var songs: [Song]                    // Alla songs
+    var instruments: [Instrument]        // Instrument-definitioner
+    var drumKits: [DrumKit]              // Drum kits
+    
+    // Projektnoteringar
+    var notes: String?
+    var tags: [String]
+    
+    // Metadata
+    var metadata: ProjectMetadata
+}
+
+struct GlobalSettings: Codable {
+    var defaultTempo: Double = 120.0
+    var defaultTimeSignature: TimeSignature = TimeSignature(numerator: 4, denominator: 4)
+    var defaultScale: Scale?
+    var midiOutputMappings: [String: String]  // Port name → device
+    var cvOutputMappings: [Int: CVOutputConfig]
+    var syncSettings: SyncSettings
+    var metronomeEnabled: Bool = false
+    var metronomeVolume: Double = 0.5
+    var prerollBars: Int = 0
+}
+
+struct SyncSettings: Codable {
+    var clockSource: ClockSourceType = .internal
+    var sendMIDIClock: Bool = true
+    var sendMIDITransport: Bool = true
+    var abletonLinkEnabled: Bool = false
+    var cvClockEnabled: Bool = false
+    var cvClockDivision: ClockDivision = .sixteenth
+}
+
+struct ProjectMetadata: Codable {
+    var snirklonVersion: String
+    var platform: String               // "macOS", "iOS"
+    var lastOpenedDevice: String?
+    var totalPlayTime: TimeInterval
+    var editCount: Int
+}
+
+enum ClockSourceType: String, Codable {
+    case `internal`
+    case midiExternal
+    case abletonLink
+    case cvExternal
+}
+```
+
+---
+
+### C.3 Pattern-modell (Exporterbar)
+
+```swift
+/// Enskilt pattern (kan exporteras/importeras)
+struct PatternModel: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var color: PatternColor
+    
+    // Timing
+    var length: Int                      // 1-128 steg (global)
+    var timeSignature: TimeSignature
+    var swing: Double                    // 0-100%
+    var tempo: Double?                   // Pattern-specifikt tempo (nil = projekt)
+    
+    // Innehåll
+    var tracks: [TrackModel]             // Upp till 64 spår
+    
+    // Skala/tonart
+    var scale: Scale?
+    var rootNote: Int?                   // 0-11 (C till B)
+    
+    // Metadata
+    var genre: String?
+    var tags: [String]
+    var notes: String?
+    var createdBy: PatternCreator
+    var created: Date
+    var modified: Date
+    
+    // Chain-inställningar
+    var chainSettings: PatternChainSettings?
+    
+    // Preset-referenser
+    var instrumentPresets: [UUID: String]  // Track ID → preset namn
+}
+
+struct TimeSignature: Codable, Equatable {
+    var numerator: Int       // 1-32
+    var denominator: Int     // 1, 2, 4, 8, 16, 32
+    
+    static let common = TimeSignature(numerator: 4, denominator: 4)
+    static let waltz = TimeSignature(numerator: 3, denominator: 4)
+}
+
+struct Scale: Codable, Equatable {
+    var name: String
+    var intervals: [Int]     // Halvtonssteg från root
+    
+    static let major = Scale(name: "Major", intervals: [0, 2, 4, 5, 7, 9, 11])
+    static let minor = Scale(name: "Minor", intervals: [0, 2, 3, 5, 7, 8, 10])
+    static let dorian = Scale(name: "Dorian", intervals: [0, 2, 3, 5, 7, 9, 10])
+    static let phrygian = Scale(name: "Phrygian", intervals: [0, 1, 3, 5, 7, 8, 10])
+    static let lydian = Scale(name: "Lydian", intervals: [0, 2, 4, 6, 7, 9, 11])
+    static let mixolydian = Scale(name: "Mixolydian", intervals: [0, 2, 4, 5, 7, 9, 10])
+    static let aeolian = Scale(name: "Aeolian", intervals: [0, 2, 3, 5, 7, 8, 10])
+    static let locrian = Scale(name: "Locrian", intervals: [0, 1, 3, 5, 6, 8, 10])
+    static let harmonicMinor = Scale(name: "Harmonic Minor", intervals: [0, 2, 3, 5, 7, 8, 11])
+    static let melodicMinor = Scale(name: "Melodic Minor", intervals: [0, 2, 3, 5, 7, 9, 11])
+    static let pentatonicMajor = Scale(name: "Pentatonic Major", intervals: [0, 2, 4, 7, 9])
+    static let pentatonicMinor = Scale(name: "Pentatonic Minor", intervals: [0, 3, 5, 7, 10])
+    static let blues = Scale(name: "Blues", intervals: [0, 3, 5, 6, 7, 10])
+    static let chromatic = Scale(name: "Chromatic", intervals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+}
+
+enum PatternCreator: Codable, Equatable {
+    case user
+    case claude(prompt: String, persona: String?)
+    case factory
+    case imported(source: String)
+}
+
+enum PatternColor: String, Codable, CaseIterable {
+    case red, orange, yellow, green, cyan, blue, purple, pink
+    case grey, white
+}
+
+struct PatternChainSettings: Codable, Equatable {
+    var followAction: FollowAction       // Vad händer efter pattern
+    var repeatCount: Int                 // Hur många gånger innan follow
+    var nextPattern: UUID?               // Manuellt valt nästa
+    var transitionBars: Int              // Bars innan transition
+}
+
+enum FollowAction: String, Codable, CaseIterable {
+    case stop                            // Stanna efter pattern
+    case loop                            // Loopa detta pattern
+    case next                            // Gå till nästa i chain
+    case random                          // Slumpmässigt från chain
+    case jump                            // Hoppa till specifikt pattern
+}
+```
+
+---
+
+### C.4 Pattern Chains & Song Mode
+
+```swift
+/// Pattern Chain - sekvens av patterns
+struct PatternChain: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var entries: [ChainEntry]
+    
+    // Chain-inställningar
+    var loopMode: ChainLoopMode
+    var loopStart: Int?                  // Index för loop start
+    var loopEnd: Int?                    // Index för loop end
+    
+    // Tempo
+    var usePatternTempo: Bool = false    // Följ pattern-specifikt tempo
+    var transitionMode: TransitionMode
+}
+
+struct ChainEntry: Codable, Identifiable, Equatable {
+    var id: UUID
+    var patternId: UUID
+    var repetitions: Int = 1             // 1-64
+    var transpose: Int = 0               // -48 till +48 halvtoner
+    var tempoMultiplier: Double = 1.0    // 0.5 - 2.0
+    var mute: Set<UUID>?                 // Mutade spår för denna entry
+}
+
+enum ChainLoopMode: String, Codable, CaseIterable {
+    case once                            // Spela chain en gång
+    case loopAll                         // Loopa hela chain
+    case loopSection                     // Loopa mellan loopStart och loopEnd
+}
+
+enum TransitionMode: String, Codable, CaseIterable {
+    case immediate                       // Byt direkt
+    case nextBar                         // Vänta till nästa takt
+    case nextBeat                        // Vänta till nästa slag
+    case endOfPattern                    // Vänta tills pattern är klart
+    case crossfade(bars: Int)            // Crossfade över X takter
+}
+
+/// Song - hierarkisk struktur av chains
+struct Song: Codable, Identifiable {
+    var id: UUID
+    var name: String
+    var sections: [SongSection]
+    var tempo: Double?                   // Song-specifikt tempo
+    
+    // Metadata
+    var duration: TimeInterval?          // Beräknad längd
+    var notes: String?
+    var created: Date
+    var modified: Date
+}
+
+struct SongSection: Codable, Identifiable {
+    var id: UUID
+    var name: String                     // "Intro", "Verse", "Chorus", etc.
+    var chains: [PatternChain]           // Parallella chains (multi-track)
+    var repetitions: Int = 1
+    var transpose: Int = 0
+    
+    // Section-specifika inställningar
+    var tempoChange: TempoChange?
+    var marker: SectionMarker?
+}
+
+enum TempoChange: Codable, Equatable {
+    case absolute(bpm: Double)
+    case relative(change: Double)        // +/- BPM
+    case ramp(targetBpm: Double, bars: Int)
+}
+
+struct SectionMarker: Codable, Equatable {
+    var type: MarkerType
+    var color: PatternColor
+    var cuePoint: Bool                   // Visa som cue point
+}
+
+enum MarkerType: String, Codable, CaseIterable {
+    case intro, verse, preChorus, chorus, bridge, breakdown
+    case buildup, drop, outro, custom
+}
+```
+
+---
+
+### C.5 Pattern Chain Manager
+
+```swift
+/// Hanterar pattern chains under playback
+class PatternChainManager: ObservableObject {
+    
+    // MARK: - State
+    @Published var currentChain: PatternChain?
+    @Published var currentEntryIndex: Int = 0
+    @Published var currentRepetition: Int = 0
+    @Published var isPlaying: Bool = false
+    
+    // MARK: - Queue
+    @Published var queuedChain: PatternChain?
+    @Published var queuedEntryIndex: Int?
+    
+    // MARK: - Callbacks
+    var onPatternChange: ((PatternModel, ChainEntry) -> Void)?
+    var onChainComplete: (() -> Void)?
+    
+    // MARK: - Pattern Access
+    private var patternLookup: [UUID: PatternModel] = [:]
+    
+    // MARK: - Setup
+    
+    func setPatterns(_ patterns: [PatternModel]) {
+        patternLookup = Dictionary(uniqueKeysWithValues: patterns.map { ($0.id, $0) })
+    }
+    
+    func loadChain(_ chain: PatternChain) {
+        currentChain = chain
+        currentEntryIndex = 0
+        currentRepetition = 0
+    }
+    
+    // MARK: - Playback Control
+    
+    func start() {
+        guard let chain = currentChain, !chain.entries.isEmpty else { return }
+        isPlaying = true
+        
+        if let entry = chain.entries.first, let pattern = patternLookup[entry.patternId] {
+            onPatternChange?(pattern, entry)
+        }
+    }
+    
+    func stop() {
+        isPlaying = false
+        currentEntryIndex = 0
+        currentRepetition = 0
+    }
+    
+    /// Kallas när nuvarande pattern har loopat klart
+    func patternCompleted() {
+        guard isPlaying, let chain = currentChain else { return }
+        
+        let entry = chain.entries[currentEntryIndex]
+        currentRepetition += 1
+        
+        // Kolla om vi ska repetera detta pattern mer
+        if currentRepetition < entry.repetitions {
+            // Fortsätt med samma pattern
+            return
+        }
+        
+        // Gå till nästa entry
+        currentRepetition = 0
+        advanceToNextEntry()
+    }
+    
+    private func advanceToNextEntry() {
+        guard let chain = currentChain else { return }
+        
+        currentEntryIndex += 1
+        
+        // Kolla loop mode
+        switch chain.loopMode {
+        case .once:
+            if currentEntryIndex >= chain.entries.count {
+                // Chain klar
+                isPlaying = false
+                onChainComplete?()
+                return
+            }
+            
+        case .loopAll:
+            if currentEntryIndex >= chain.entries.count {
+                currentEntryIndex = 0
+            }
+            
+        case .loopSection:
+            let loopEnd = chain.loopEnd ?? (chain.entries.count - 1)
+            if currentEntryIndex > loopEnd {
+                currentEntryIndex = chain.loopStart ?? 0
+            }
+        }
+        
+        // Byt till nästa pattern
+        if let entry = chain.entries[safe: currentEntryIndex],
+           let pattern = patternLookup[entry.patternId] {
+            onPatternChange?(pattern, entry)
+        }
+    }
+    
+    // MARK: - Queue
+    
+    /// Köa nästa chain/pattern
+    func queue(chain: PatternChain, startAt: Int = 0) {
+        queuedChain = chain
+        queuedEntryIndex = startAt
+    }
+    
+    /// Köa specifikt pattern i nuvarande chain
+    func queuePatternInChain(at index: Int) {
+        queuedEntryIndex = index
+        queuedChain = nil  // Samma chain
+    }
+    
+    /// Aktivera köat vid nästa transition point
+    func activateQueued() {
+        if let queued = queuedChain {
+            loadChain(queued)
+            if let index = queuedEntryIndex {
+                currentEntryIndex = index
+            }
+            queuedChain = nil
+            queuedEntryIndex = nil
+            
+            if let entry = currentChain?.entries[safe: currentEntryIndex],
+               let pattern = patternLookup[entry.patternId] {
+                onPatternChange?(pattern, entry)
+            }
+        } else if let index = queuedEntryIndex {
+            currentEntryIndex = index
+            currentRepetition = 0
+            queuedEntryIndex = nil
+            
+            if let entry = currentChain?.entries[safe: currentEntryIndex],
+               let pattern = patternLookup[entry.patternId] {
+                onPatternChange?(pattern, entry)
+            }
+        }
+    }
+    
+    // MARK: - Navigation
+    
+    func jumpToEntry(at index: Int) {
+        guard let chain = currentChain, index < chain.entries.count else { return }
+        currentEntryIndex = index
+        currentRepetition = 0
+        
+        if let entry = chain.entries[safe: index],
+           let pattern = patternLookup[entry.patternId] {
+            onPatternChange?(pattern, entry)
+        }
+    }
+    
+    func previous() {
+        let newIndex = max(0, currentEntryIndex - 1)
+        jumpToEntry(at: newIndex)
+    }
+    
+    func next() {
+        advanceToNextEntry()
+    }
+}
+```
+
+---
+
+### C.6 Projekt-hantering (Spara/Ladda)
+
+```swift
+/// Projekthantering för spara/ladda
+class ProjectManager: ObservableObject {
+    
+    // MARK: - State
+    @Published var currentProject: SnirklonProject?
+    @Published var hasUnsavedChanges: Bool = false
+    @Published var recentProjects: [ProjectReference] = []
+    
+    // MARK: - Paths
+    private let fileManager = FileManager.default
+    private var documentsURL: URL {
+        fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Snirklon", isDirectory: true)
+    }
+    
+    private var projectsURL: URL { documentsURL.appendingPathComponent("Projects") }
+    private var patternsURL: URL { documentsURL.appendingPathComponent("Patterns") }
+    private var backupsURL: URL { documentsURL.appendingPathComponent("Backups/AutoSave") }
+    
+    // MARK: - Initialization
+    
+    init() {
+        setupDirectories()
+        loadRecentProjects()
+    }
+    
+    private func setupDirectories() {
+        let dirs = [documentsURL, projectsURL, patternsURL, backupsURL]
+        for dir in dirs {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+    
+    // MARK: - Create
+    
+    func createNewProject(name: String) -> SnirklonProject {
+        let project = SnirklonProject(
+            id: UUID(),
+            name: name,
+            created: Date(),
+            modified: Date(),
+            globalSettings: GlobalSettings(),
+            patterns: [PatternModel.createDefault(index: 0)],
+            songs: [],
+            instruments: [],
+            drumKits: [],
+            metadata: ProjectMetadata(
+                snirklonVersion: "1.0",
+                platform: "macOS",
+                totalPlayTime: 0,
+                editCount: 0
+            )
+        )
+        
+        currentProject = project
+        hasUnsavedChanges = true
+        return project
+    }
+    
+    // MARK: - Save
+    
+    func saveProject() throws {
+        guard let project = currentProject else {
+            throw ProjectError.noProjectLoaded
+        }
+        
+        let url = projectsURL.appendingPathComponent("\(project.name).snirklon")
+        try saveProject(project, to: url)
+        hasUnsavedChanges = false
+        
+        addToRecent(project, url: url)
+    }
+    
+    func saveProjectAs(name: String) throws {
+        guard var project = currentProject else {
+            throw ProjectError.noProjectLoaded
+        }
+        
+        project.name = name
+        project.modified = Date()
+        currentProject = project
+        
+        try saveProject()
+    }
+    
+    private func saveProject(_ project: SnirklonProject, to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        
+        let data = try encoder.encode(project)
+        try data.write(to: url)
+    }
+    
+    // MARK: - Load
+    
+    func loadProject(from url: URL) throws {
+        let data = try Data(contentsOf: url)
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        
+        let project = try decoder.decode(SnirklonProject.self, from: data)
+        currentProject = project
+        hasUnsavedChanges = false
+        
+        addToRecent(project, url: url)
+    }
+    
+    func loadProject(named name: String) throws {
+        let url = projectsURL.appendingPathComponent("\(name).snirklon")
+        try loadProject(from: url)
+    }
+    
+    // MARK: - Recent Projects
+    
+    private func loadRecentProjects() {
+        let recentURL = documentsURL.appendingPathComponent(".recent.json")
+        guard let data = try? Data(contentsOf: recentURL) else { return }
+        recentProjects = (try? JSONDecoder().decode([ProjectReference].self, from: data)) ?? []
+        
+        // Filtrera bort filer som inte längre finns
+        recentProjects = recentProjects.filter { fileManager.fileExists(atPath: $0.url.path) }
+    }
+    
+    private func addToRecent(_ project: SnirklonProject, url: URL) {
+        let ref = ProjectReference(
+            id: project.id,
+            name: project.name,
+            url: url,
+            modified: project.modified
+        )
+        
+        // Ta bort om den redan finns
+        recentProjects.removeAll { $0.id == project.id }
+        
+        // Lägg till först
+        recentProjects.insert(ref, at: 0)
+        
+        // Max 20 recent
+        if recentProjects.count > 20 {
+            recentProjects = Array(recentProjects.prefix(20))
+        }
+        
+        // Spara
+        let recentURL = documentsURL.appendingPathComponent(".recent.json")
+        if let data = try? JSONEncoder().encode(recentProjects) {
+            try? data.write(to: recentURL)
+        }
+    }
+    
+    // MARK: - Auto-save
+    
+    private var autoSaveTimer: Timer?
+    
+    func startAutoSave(interval: TimeInterval = 60) {
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.autoSave()
+        }
+    }
+    
+    func stopAutoSave() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+    }
+    
+    private func autoSave() {
+        guard hasUnsavedChanges, let project = currentProject else { return }
+        
+        let filename = "\(project.name)_autosave_\(Date().timeIntervalSince1970).snirklon"
+        let url = backupsURL.appendingPathComponent(filename)
+        
+        try? saveProject(project, to: url)
+        
+        // Rensa gamla autosaves (behåll 10 senaste)
+        cleanupAutoSaves()
+    }
+    
+    private func cleanupAutoSaves() {
+        guard let files = try? fileManager.contentsOfDirectory(at: backupsURL, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        
+        let sorted = files.sorted { url1, url2 in
+            let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            return date1 > date2
+        }
+        
+        // Ta bort allt utom de 10 senaste
+        for file in sorted.dropFirst(10) {
+            try? fileManager.removeItem(at: file)
+        }
+    }
+    
+    // MARK: - Pattern Export/Import
+    
+    func exportPattern(_ pattern: PatternModel, to url: URL? = nil) throws {
+        let targetURL = url ?? patternsURL.appendingPathComponent("User/\(pattern.name).snpat")
+        
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .prettyPrinted
+        
+        let data = try encoder.encode(pattern)
+        try data.write(to: targetURL)
+    }
+    
+    func importPattern(from url: URL) throws -> PatternModel {
+        let data = try Data(contentsOf: url)
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        
+        var pattern = try decoder.decode(PatternModel.self, from: data)
+        pattern.id = UUID()  // Nytt ID för importerat pattern
+        pattern.createdBy = .imported(source: url.lastPathComponent)
+        
+        return pattern
+    }
+    
+    // MARK: - MIDI Export
+    
+    func exportPatternAsMIDI(_ pattern: PatternModel, to url: URL) throws {
+        let midiData = try MIDIFileExporter.export(pattern: pattern)
+        try midiData.write(to: url)
+    }
+    
+    func exportSongAsMIDI(_ song: Song, patterns: [PatternModel], to url: URL) throws {
+        let midiData = try MIDIFileExporter.export(song: song, patterns: patterns)
+        try midiData.write(to: url)
+    }
+    
+    // MARK: - List Projects
+    
+    func listProjects() -> [ProjectReference] {
+        guard let files = try? fileManager.contentsOfDirectory(at: projectsURL, includingPropertiesForKeys: [.contentModificationDateKey]) else {
+            return []
+        }
+        
+        return files
+            .filter { $0.pathExtension == "snirklon" }
+            .compactMap { url -> ProjectReference? in
+                guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]) else { return nil }
+                let name = url.deletingPathExtension().lastPathComponent
+                return ProjectReference(
+                    id: UUID(),  // Okänt utan att läsa filen
+                    name: name,
+                    url: url,
+                    modified: values.contentModificationDate ?? Date()
+                )
+            }
+            .sorted { $0.modified > $1.modified }
+    }
+}
+
+// MARK: - Supporting Types
+
+struct ProjectReference: Codable, Identifiable {
+    var id: UUID
+    var name: String
+    var url: URL
+    var modified: Date
+}
+
+enum ProjectError: Error {
+    case noProjectLoaded
+    case fileNotFound
+    case invalidFormat
+    case encodingFailed
+    case decodingFailed
+}
+```
+
+---
+
+### C.7 MIDI File Export
+
+```swift
+/// Exportera patterns/songs till standard MIDI-fil
+class MIDIFileExporter {
+    
+    static func export(pattern: PatternModel, tempo: Double = 120) throws -> Data {
+        var midiFile = MIDIFile(format: .type1, ticksPerQuarterNote: 96)
+        
+        // Tempo track
+        var tempoTrack = MIDITrack()
+        tempoTrack.events.append(MIDIEvent(
+            tick: 0,
+            event: .tempo(bpm: tempo)
+        ))
+        tempoTrack.events.append(MIDIEvent(
+            tick: 0,
+            event: .timeSignature(
+                numerator: UInt8(pattern.timeSignature.numerator),
+                denominator: UInt8(pattern.timeSignature.denominator)
+            )
+        ))
+        midiFile.tracks.append(tempoTrack)
+        
+        // En track per sequencer-spår
+        for track in pattern.tracks {
+            var midiTrack = MIDITrack()
+            midiTrack.name = track.name
+            
+            let ticksPerStep = 24  // 96 PPQN / 4 = 24 ticks per 16th note
+            
+            for step in track.steps where step.enabled {
+                let tick = step.index * ticksPerStep + step.microTiming
+                let note = UInt8((step.note?.pitch ?? track.defaultNote) + track.transpose)
+                let velocity = UInt8(step.effectiveVelocity(trackDefault: track.defaultVelocity))
+                let duration = Int(Double(ticksPerStep) * (step.gateTime ?? track.defaultGateTime))
+                
+                // Note On
+                midiTrack.events.append(MIDIEvent(
+                    tick: tick,
+                    event: .noteOn(channel: UInt8(track.midiChannel - 1), note: note, velocity: velocity)
+                ))
+                
+                // Note Off
+                midiTrack.events.append(MIDIEvent(
+                    tick: tick + duration,
+                    event: .noteOff(channel: UInt8(track.midiChannel - 1), note: note, velocity: 0)
+                ))
+                
+                // Ackord
+                if let chord = step.chord {
+                    for interval in chord {
+                        let chordNote = UInt8(Int(note) + interval)
+                        midiTrack.events.append(MIDIEvent(
+                            tick: tick,
+                            event: .noteOn(channel: UInt8(track.midiChannel - 1), note: chordNote, velocity: velocity)
+                        ))
+                        midiTrack.events.append(MIDIEvent(
+                            tick: tick + duration,
+                            event: .noteOff(channel: UInt8(track.midiChannel - 1), note: chordNote, velocity: 0)
+                        ))
+                    }
+                }
+            }
+            
+            // Sortera events efter tick
+            midiTrack.events.sort { $0.tick < $1.tick }
+            midiFile.tracks.append(midiTrack)
+        }
+        
+        return midiFile.encode()
+    }
+    
+    static func export(song: Song, patterns: [PatternModel]) throws -> Data {
+        // Bygg en lång MIDI-fil av alla patterns i song
+        var midiFile = MIDIFile(format: .type1, ticksPerQuarterNote: 96)
+        
+        // Implementation för song export...
+        // (Iterera genom sections, chains, patterns och bygg en lång tidslinje)
+        
+        return midiFile.encode()
+    }
+}
+
+// MARK: - MIDI File Structures
+
+struct MIDIFile {
+    var format: MIDIFileFormat
+    var ticksPerQuarterNote: UInt16
+    var tracks: [MIDITrack] = []
+    
+    func encode() -> Data {
+        var data = Data()
+        
+        // Header chunk
+        data.append(contentsOf: [0x4D, 0x54, 0x68, 0x64])  // "MThd"
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x06])  // Length = 6
+        data.append(contentsOf: UInt16(format.rawValue).bigEndianBytes)
+        data.append(contentsOf: UInt16(tracks.count).bigEndianBytes)
+        data.append(contentsOf: ticksPerQuarterNote.bigEndianBytes)
+        
+        // Track chunks
+        for track in tracks {
+            data.append(track.encode())
+        }
+        
+        return data
+    }
+    
+    enum MIDIFileFormat: UInt16 {
+        case type0 = 0  // Single track
+        case type1 = 1  // Multiple tracks, synchronous
+        case type2 = 2  // Multiple tracks, asynchronous
+    }
+}
+
+struct MIDITrack {
+    var name: String = ""
+    var events: [MIDIEvent] = []
+    
+    func encode() -> Data {
+        var data = Data()
+        var trackData = Data()
+        
+        // Track name
+        if !name.isEmpty {
+            trackData.append(0x00)  // Delta time
+            trackData.append(contentsOf: [0xFF, 0x03])  // Track name meta event
+            trackData.append(UInt8(name.count))
+            trackData.append(contentsOf: name.utf8)
+        }
+        
+        // Events
+        var lastTick = 0
+        for event in events {
+            let deltaTime = event.tick - lastTick
+            trackData.append(contentsOf: encodeVariableLength(deltaTime))
+            trackData.append(contentsOf: event.encode())
+            lastTick = event.tick
+        }
+        
+        // End of track
+        trackData.append(contentsOf: [0x00, 0xFF, 0x2F, 0x00])
+        
+        // Track header
+        data.append(contentsOf: [0x4D, 0x54, 0x72, 0x6B])  // "MTrk"
+        data.append(contentsOf: UInt32(trackData.count).bigEndianBytes)
+        data.append(trackData)
+        
+        return data
+    }
+    
+    private func encodeVariableLength(_ value: Int) -> [UInt8] {
+        var result: [UInt8] = []
+        var v = value
+        
+        result.append(UInt8(v & 0x7F))
+        v >>= 7
+        
+        while v > 0 {
+            result.insert(UInt8((v & 0x7F) | 0x80), at: 0)
+            v >>= 7
+        }
+        
+        return result
+    }
+}
+
+struct MIDIEvent {
+    var tick: Int
+    var event: MIDIEventType
+    
+    func encode() -> [UInt8] {
+        switch event {
+        case .noteOn(let channel, let note, let velocity):
+            return [0x90 | channel, note, velocity]
+        case .noteOff(let channel, let note, let velocity):
+            return [0x80 | channel, note, velocity]
+        case .controlChange(let channel, let controller, let value):
+            return [0xB0 | channel, controller, value]
+        case .tempo(let bpm):
+            let microsPerBeat = UInt32(60_000_000 / bpm)
+            return [0xFF, 0x51, 0x03,
+                    UInt8((microsPerBeat >> 16) & 0xFF),
+                    UInt8((microsPerBeat >> 8) & 0xFF),
+                    UInt8(microsPerBeat & 0xFF)]
+        case .timeSignature(let num, let denom):
+            let denomPow = UInt8(log2(Double(denom)))
+            return [0xFF, 0x58, 0x04, num, denomPow, 24, 8]
+        }
+    }
+    
+    enum MIDIEventType {
+        case noteOn(channel: UInt8, note: UInt8, velocity: UInt8)
+        case noteOff(channel: UInt8, note: UInt8, velocity: UInt8)
+        case controlChange(channel: UInt8, controller: UInt8, value: UInt8)
+        case tempo(bpm: Double)
+        case timeSignature(numerator: UInt8, denominator: UInt8)
+    }
+}
+
+// MARK: - Extensions
+
+extension UInt16 {
+    var bigEndianBytes: [UInt8] {
+        return [UInt8((self >> 8) & 0xFF), UInt8(self & 0xFF)]
+    }
+}
+
+extension UInt32 {
+    var bigEndianBytes: [UInt8] {
+        return [
+            UInt8((self >> 24) & 0xFF),
+            UInt8((self >> 16) & 0xFF),
+            UInt8((self >> 8) & 0xFF),
+            UInt8(self & 0xFF)
+        ]
+    }
+}
+```
+
+---
+
+### C.8 UI för Pattern Chain Editor
+
+```swift
+struct PatternChainEditorView: View {
+    @ObservedObject var chainManager: PatternChainManager
+    @Binding var chain: PatternChain
+    @State var patterns: [PatternModel]
+    
+    @State private var selectedEntryId: UUID?
+    @State private var isDragging: Bool = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            ChainHeaderView(chain: $chain)
+            
+            Divider()
+            
+            // Chain entries (horizontal scroll)
+            ScrollView(.horizontal, showsIndicators: true) {
+                HStack(spacing: 4) {
+                    ForEach(Array(chain.entries.enumerated()), id: \.element.id) { index, entry in
+                        ChainEntryView(
+                            entry: entry,
+                            pattern: patterns.first { $0.id == entry.patternId },
+                            isSelected: selectedEntryId == entry.id,
+                            isPlaying: chainManager.isPlaying && 
+                                       chainManager.currentEntryIndex == index,
+                            isQueued: chainManager.queuedEntryIndex == index
+                        )
+                        .onTapGesture {
+                            selectedEntryId = entry.id
+                        }
+                        .onLongPressGesture {
+                            // Queue pattern
+                            chainManager.queuePatternInChain(at: index)
+                        }
+                        .draggable(entry)
+                    }
+                    
+                    // Add button
+                    AddEntryButton {
+                        addEntry()
+                    }
+                }
+                .padding()
+            }
+            .frame(height: 120)
+            .background(Color.black.opacity(0.3))
+            
+            Divider()
+            
+            // Entry editor (om vald)
+            if let entryId = selectedEntryId,
+               let entryIndex = chain.entries.firstIndex(where: { $0.id == entryId }) {
+                ChainEntryEditorView(
+                    entry: $chain.entries[entryIndex],
+                    patterns: patterns,
+                    onDelete: { deleteEntry(at: entryIndex) }
+                )
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private func addEntry() {
+        guard let firstPattern = patterns.first else { return }
+        let entry = ChainEntry(
+            id: UUID(),
+            patternId: firstPattern.id
+        )
+        chain.entries.append(entry)
+    }
+    
+    private func deleteEntry(at index: Int) {
+        chain.entries.remove(at: index)
+        selectedEntryId = nil
+    }
+}
+
+struct ChainHeaderView: View {
+    @Binding var chain: PatternChain
+    
+    var body: some View {
+        HStack {
+            TextField("Chain Name", text: $chain.name)
+                .textFieldStyle(.plain)
+                .font(.headline)
+            
+            Spacer()
+            
+            Picker("Loop", selection: $chain.loopMode) {
+                ForEach(ChainLoopMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
+            
+            Picker("Transition", selection: $chain.transitionMode) {
+                Text("Immediate").tag(TransitionMode.immediate)
+                Text("Next Bar").tag(TransitionMode.nextBar)
+                Text("End Pattern").tag(TransitionMode.endOfPattern)
+            }
+            .frame(width: 150)
+        }
+        .padding()
+    }
+}
+
+struct ChainEntryView: View {
+    let entry: ChainEntry
+    let pattern: PatternModel?
+    let isSelected: Bool
+    let isPlaying: Bool
+    let isQueued: Bool
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            // Pattern thumbnail
+            RoundedRectangle(cornerRadius: 4)
+                .fill(patternColor)
+                .frame(width: 80, height: 60)
+                .overlay(
+                    Text(pattern?.name ?? "?")
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(borderColor, lineWidth: isSelected ? 2 : 0)
+                )
+            
+            // Repetitions
+            if entry.repetitions > 1 {
+                Text("×\(entry.repetitions)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Transpose indicator
+            if entry.transpose != 0 {
+                Text("\(entry.transpose > 0 ? "+" : "")\(entry.transpose)")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+            }
+            
+            // Playing indicator
+            if isPlaying {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+            } else if isQueued {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 8, height: 8)
+            }
+        }
+    }
+    
+    private var patternColor: Color {
+        guard let pattern = pattern else { return Color.gray }
+        return Color(pattern.color.rawValue)
+    }
+    
+    private var borderColor: Color {
+        if isPlaying { return .green }
+        if isQueued { return .orange }
+        if isSelected { return .white }
+        return .clear
+    }
+}
+
+struct ChainEntryEditorView: View {
+    @Binding var entry: ChainEntry
+    let patterns: [PatternModel]
+    let onDelete: () -> Void
+    
+    var body: some View {
+        Form {
+            Section("Pattern") {
+                Picker("Pattern", selection: $entry.patternId) {
+                    ForEach(patterns) { pattern in
+                        Text(pattern.name).tag(pattern.id)
+                    }
+                }
+            }
+            
+            Section("Playback") {
+                Stepper("Repetitions: \(entry.repetitions)", value: $entry.repetitions, in: 1...64)
+                
+                Stepper("Transpose: \(entry.transpose)", value: $entry.transpose, in: -48...48)
+                
+                HStack {
+                    Text("Tempo")
+                    Slider(value: $entry.tempoMultiplier, in: 0.5...2.0, step: 0.05)
+                    Text("\(Int(entry.tempoMultiplier * 100))%")
+                }
+            }
+            
+            Section {
+                Button("Delete Entry", role: .destructive, action: onDelete)
+            }
+        }
+        .padding()
+    }
+}
+
+struct AddEntryButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title)
+                Text("Add")
+                    .font(.caption)
+            }
+            .frame(width: 60, height: 80)
+            .background(Color.secondary.opacity(0.2))
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+}
+```
+
+---
+
+### C.9 Sprint-uppdatering för Projekt & Chains
+
+#### Nytt Sprint (Sprint 3)
+- [ ] Implementera `SnirklonProject` datamodell
+- [ ] Implementera `ProjectManager` (spara/ladda)
+- [ ] Auto-save med backup
+- [ ] Recent projects lista
+- [ ] Pattern export/import (.snpat)
+- [ ] MIDI export
+
+#### Nytt Sprint (Sprint 4)
+- [ ] Implementera `PatternChain` datamodell
+- [ ] Implementera `PatternChainManager`
+- [ ] Chain playback med transitions
+- [ ] Queue-system för patterns
+- [ ] Song mode med sections
+- [ ] Pattern Chain Editor UI
+
+---
+
 *Senast uppdaterad: December 2024*
