@@ -9,10 +9,10 @@ struct StepGridView: View {
     @State private var lastPaintedStep: UUID? = nil
     @State private var showToolbar: Bool = false
     
-    /// Grid geometry
-    private let stepWidth: CGFloat = DS.Size.minTouch + DS.Space.xxs
-    private let stepHeight: CGFloat = DS.Size.minTouch + DS.Space.s
-    private let rulerHeight: CGFloat = 24
+    /// Grid geometry (using pre-computed values for performance)
+    private let stepWidth: CGFloat = DS.Grid.stepWidth
+    private let stepHeight: CGFloat = DS.Grid.stepHeight
+    private let rulerHeight: CGFloat = DS.Grid.rulerHeight
     
     /// Maximum steps to display based on mode
     private var stepCount: Int {
@@ -39,16 +39,32 @@ struct StepGridView: View {
                 
                 // Main grid with optional paint gesture
                 ScrollView([.horizontal, .vertical], showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: DS.Space.s) {
-                        // Grid ruler at top
-                        GridRulerView(stepCount: stepCount, currentStep: store.currentStep, isPlaying: store.isPlaying)
-                            .padding(.leading, DS.Space.xs)
-                        
-                        // Step grid
-                        if let pattern = store.currentPattern {
-                            ForEach(pattern.tracks) { track in
-                                trackRow(track: track)
+                    LazyVStack(alignment: .leading, spacing: DS.Space.s, pinnedViews: [.sectionHeaders]) {
+                        // Grid ruler at top (pinned)
+                        Section {
+                            // Step grid - use LazyVStack for rows
+                            if let pattern = store.currentPattern {
+                                ForEach(pattern.tracks) { track in
+                                    TrackRowContainer(
+                                        track: track,
+                                        selectedStepIDs: store.selection.selectedStepIDs,
+                                        selectedTrackID: store.selection.selectedTrackID,
+                                        isPlaying: store.isPlaying,
+                                        currentStep: store.currentStep,
+                                        showIndicators: store.features.showStepIndicators,
+                                        onToggleStep: store.toggleStep,
+                                        onSelectTrack: store.selectTrack,
+                                        onSelectStep: store.selectStep,
+                                        onAdjustVelocity: store.adjustVelocity,
+                                        onAdjustTiming: store.adjustTiming,
+                                        onOpenInspector: store.openInspector
+                                    )
+                                }
                             }
+                        } header: {
+                            GridRulerView(stepCount: stepCount, currentStep: store.currentStep, isPlaying: store.isPlaying)
+                                .padding(.leading, DS.Space.xs)
+                                .background(DS.Color.background)
                         }
                     }
                     .padding(DS.Space.m)
@@ -245,31 +261,6 @@ struct StepGridView: View {
         paintState = nil
         lastPaintedStep = nil
     }
-    
-    // MARK: - Track Row
-    
-    @ViewBuilder
-    private func trackRow(track: TrackModel) -> some View {
-        HStack(spacing: DS.Space.xxs) {
-            ForEach(track.steps) { step in
-                StepCellView(
-                    step: step,
-                    isSelected: store.selection.selectedStepIDs.contains(step.id),
-                    isPlaying: store.isPlaying && store.currentStep == step.index && store.selection.selectedTrackID == track.id,
-                    trackColor: track.color,
-                    onToggle: { store.toggleStep(step.id) },
-                    onSelect: {
-                        store.selectTrack(track.id)
-                        store.selectStep(step.id)
-                    },
-                    onVelocityDelta: { delta in store.adjustVelocity(for: step.id, delta: delta) },
-                    onTimingDelta: { delta in store.adjustTiming(for: step.id, delta: delta) },
-                    onOpenInspector: { store.openInspector() }
-                )
-            }
-        }
-        .opacity(track.isMuted ? 0.4 : 1.0)
-    }
 }
 
 // MARK: - Euclidean Generator Sheet
@@ -396,5 +387,93 @@ struct EuclideanGeneratorSheet: View {
             accentEvery: Int(accentEvery)
         )
         store.showEuclideanGenerator = false
+    }
+}
+
+// MARK: - Optimized Track Row Container
+
+/// Isolated container for track rows to prevent unnecessary re-renders
+/// Only updates when the specific track data changes
+struct TrackRowContainer: View, Equatable {
+    let track: TrackModel
+    let selectedStepIDs: Set<UUID>
+    let selectedTrackID: UUID?
+    let isPlaying: Bool
+    let currentStep: Int
+    let showIndicators: Bool
+    
+    // Callbacks (excluded from equality check)
+    let onToggleStep: (UUID) -> Void
+    let onSelectTrack: (UUID) -> Void
+    let onSelectStep: (UUID) -> Void
+    let onAdjustVelocity: (UUID, Int) -> Void
+    let onAdjustTiming: (UUID, Int) -> Void
+    let onOpenInspector: () -> Void
+    
+    var body: some View {
+        HStack(spacing: DS.Space.xxs) {
+            ForEach(track.steps) { step in
+                StepCellView(
+                    step: step,
+                    isSelected: selectedStepIDs.contains(step.id),
+                    isPlaying: isPlaying && currentStep == step.index && selectedTrackID == track.id,
+                    trackColor: track.color,
+                    showIndicators: showIndicators,
+                    onToggle: { onToggleStep(step.id) },
+                    onSelect: {
+                        onSelectTrack(track.id)
+                        onSelectStep(step.id)
+                    },
+                    onVelocityDelta: { delta in onAdjustVelocity(step.id, delta) },
+                    onTimingDelta: { delta in onAdjustTiming(step.id, delta) },
+                    onOpenInspector: onOpenInspector
+                )
+            }
+        }
+        .opacity(track.isMuted ? 0.4 : 1.0)
+    }
+    
+    // Custom equality check - only compare data, not callbacks
+    static func == (lhs: TrackRowContainer, rhs: TrackRowContainer) -> Bool {
+        lhs.track == rhs.track &&
+        lhs.selectedStepIDs == rhs.selectedStepIDs &&
+        lhs.selectedTrackID == rhs.selectedTrackID &&
+        lhs.isPlaying == rhs.isPlaying &&
+        lhs.currentStep == rhs.currentStep &&
+        lhs.showIndicators == rhs.showIndicators
+    }
+}
+
+// MARK: - Optimized Step Cell Wrapper
+
+/// Wrapper that uses EquatableView for efficient re-rendering
+struct OptimizedStepCell: View, Equatable {
+    let step: StepModel
+    let isSelected: Bool
+    let isPlaying: Bool
+    let trackColor: Color
+    let showIndicators: Bool
+    
+    var body: some View {
+        StepCellView(
+            step: step,
+            isSelected: isSelected,
+            isPlaying: isPlaying,
+            trackColor: trackColor,
+            showIndicators: showIndicators,
+            onToggle: {},
+            onSelect: {},
+            onVelocityDelta: { _ in },
+            onTimingDelta: { _ in },
+            onOpenInspector: {}
+        )
+    }
+    
+    static func == (lhs: OptimizedStepCell, rhs: OptimizedStepCell) -> Bool {
+        lhs.step == rhs.step &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.isPlaying == rhs.isPlaying &&
+        lhs.trackColor == rhs.trackColor &&
+        lhs.showIndicators == rhs.showIndicators
     }
 }

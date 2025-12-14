@@ -6,12 +6,11 @@ import SwiftUI
 // - DS tokens only (no ad-hoc styling)
 
 struct StepCellView: View {
-    @EnvironmentObject var store: SequencerStore
-    
     let step: StepModel
     let isSelected: Bool
     let isPlaying: Bool
     let trackColor: Color
+    let showIndicators: Bool  // Passed from parent instead of reading from store
     
     let onToggle: () -> Void
     let onSelect: () -> Void
@@ -21,11 +20,6 @@ struct StepCellView: View {
     
     @State private var pulseOn: Bool = false
     @State private var lastVelocityDelta: Int = 0
-    
-    /// Whether to show step indicators (Advanced mode)
-    private var showIndicators: Bool {
-        store.features.showStepIndicators
-    }
     
     var body: some View {
         ZStack {
@@ -143,10 +137,8 @@ struct StepCellView: View {
     // MARK: - Computed Properties
     
     private var velocityOpacity: Double {
-        // Clamp 1...127 -> 0.15...0.95
-        let v = max(1, min(127, step.velocity))
-        let t = Double(v) / 127.0
-        return 0.15 + (0.80 * t)
+        // Use cached velocity opacity for performance
+        StepRenderCache.shared.velocityOpacity(for: step.velocity)
     }
     
     private var accessibilityLabel: String {

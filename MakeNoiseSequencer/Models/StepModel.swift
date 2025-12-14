@@ -101,12 +101,9 @@ struct StepModel: Identifiable, Equatable, Codable {
         max(1, min(96, length))
     }
     
-    /// Note name (e.g., "C4", "F#3")
+    /// Note name (e.g., "C4", "F#3") - uses cached lookup for performance
     var noteName: String {
-        let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        let octave = (note / 12) - 1
-        let noteName = noteNames[note % 12]
-        return "\(noteName)\(octave)"
+        NoteNameCache.shared.name(for: note)
     }
     
     /// Octave number
