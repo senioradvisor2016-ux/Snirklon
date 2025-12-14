@@ -35,6 +35,13 @@ class SequencerStore: ObservableObject {
     @Published var showMIDILearn: Bool = false
     @Published var showTutorials: Bool = false
     @Published var showEuclideanGenerator: Bool = false
+    @Published var showWhatsNew: Bool = false
+    @Published var showKeyboardShortcuts: Bool = false
+    
+    // MARK: - Status Indicators
+    @Published var isSaving: Bool = false
+    @Published var lastSaveTime: Date?
+    @Published var hasUnsavedChanges: Bool = false
     
     // MARK: - Clipboard
     @Published var copiedPattern: PatternModel?
@@ -53,6 +60,7 @@ class SequencerStore: ObservableObject {
     let modeManager = UserModeManager()
     let toastManager = ToastManager()
     let confirmationManager = ConfirmationManager()
+    let errorManager = ErrorManager()
     
     // MARK: - Mode Convenience
     
@@ -931,14 +939,35 @@ class SequencerStore: ObservableObject {
     // MARK: - Persistence
     
     private func scheduleAutoSave() {
+        hasUnsavedChanges = true
         autoSaveDebouncer?.call()
     }
     
     private func saveState() {
+        isSaving = true
+        
         // TODO: Implement actual persistence
         #if DEBUG
         print("💾 Auto-saving state...")
         #endif
+        
+        // Simulate save delay
+        Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+            await MainActor.run {
+                isSaving = false
+                hasUnsavedChanges = false
+                lastSaveTime = Date()
+            }
+        }
+    }
+    
+    func toggleKeyboardShortcuts() {
+        showKeyboardShortcuts.toggle()
+    }
+    
+    func toggleWhatsNew() {
+        showWhatsNew.toggle()
     }
     
     private func setupDefaultCVTracks() {

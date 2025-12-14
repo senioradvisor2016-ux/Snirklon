@@ -59,6 +59,7 @@ struct PerformanceView: View {
         }
         .toastContainer(store.toastManager)
         .confirmationContainer(store.confirmationManager)
+        .errorContainer(store.errorManager)
         // Euclidean Generator sheet (Advanced mode only)
         .sheet(isPresented: Binding(
             get: { store.showEuclideanGenerator && store.features.showEuclidean },
@@ -68,9 +69,17 @@ struct PerformanceView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
-        // Mode selector sheet
-        .sheet(isPresented: .constant(false)) {
-            ModeSelectorView(modeManager: store.modeManager)
+        // Keyboard shortcuts sheet
+        .sheet(isPresented: $store.showKeyboardShortcuts) {
+            KeyboardShortcutsPanelView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        // What's new sheet
+        .sheet(isPresented: $store.showWhatsNew) {
+            WhatsNewView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         // Keyboard shortcuts
         .onKeyPress(.space) {

@@ -19,6 +19,9 @@ struct TransportControls: View {
                 }
             }
             .modifier(PanelStyles.panelButtonModifier(isOn: store.isPlaying))
+            .tooltip("Spela", shortcut: "Space")
+            .accessibilityLabel("Spela")
+            .accessibilityHint("Dubbelklicka för att starta uppspelning")
             
             // Stop button
             Button(action: { store.stop() }) {
@@ -27,6 +30,9 @@ struct TransportControls: View {
                     .foregroundStyle(DS.Color.textPrimary)
             }
             .modifier(PanelStyles.panelButtonModifier(isOn: false))
+            .tooltip("Stoppa", shortcut: "Esc")
+            .accessibilityLabel("Stoppa")
+            .accessibilityHint("Dubbelklicka för att stoppa och nollställa")
             
             // Record button (placeholder for now)
             Button(action: { /* TODO: implement record */ }) {
@@ -35,6 +41,8 @@ struct TransportControls: View {
                     .foregroundStyle(DS.Color.textMuted)
             }
             .modifier(PanelStyles.panelButtonModifier(isOn: false))
+            .tooltip("Spela in (kommer snart)")
+            .accessibilityLabel("Spela in")
         }
     }
 }

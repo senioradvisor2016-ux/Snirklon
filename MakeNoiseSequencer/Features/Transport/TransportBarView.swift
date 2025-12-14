@@ -20,11 +20,26 @@ struct TransportBarView: View {
             
             Spacer()
             
+            // Save indicator
+            saveIndicator
+            
             // Current step display
             stepDisplay
             
             // Mode toggle
             ModeToggleButton(modeManager: store.modeManager)
+            
+            // Keyboard shortcuts button
+            Button(action: { store.toggleKeyboardShortcuts() }) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 14))
+                    .foregroundStyle(store.showKeyboardShortcuts ? DS.Color.led : DS.Color.textMuted)
+            }
+            .frame(width: 32, height: 32)
+            .background(
+                Circle()
+                    .fill(store.showKeyboardShortcuts ? DS.Color.surface2 : Color.clear)
+            )
             
             // Audio Interface / CV Settings button (Advanced mode only)
             if store.features.showAudioInterface {
@@ -102,6 +117,47 @@ struct TransportBarView: View {
                 .foregroundStyle(store.isPlaying ? DS.Color.led : DS.Color.textPrimary)
         }
         .modifier(PanelStyles.panelButtonModifier(isOn: store.isPlaying))
+    }
+    
+    // MARK: - Save Indicator
+    
+    private var saveIndicator: some View {
+        HStack(spacing: 4) {
+            if store.isSaving {
+                ProgressView()
+                    .scaleEffect(0.6)
+                    .tint(DS.Color.textMuted)
+                Text("Sparar...")
+                    .font(DS.Font.monoXS)
+                    .foregroundStyle(DS.Color.textMuted)
+            } else if store.hasUnsavedChanges {
+                Circle()
+                    .fill(DS.Color.led)
+                    .frame(width: 6, height: 6)
+                Text("Ej sparat")
+                    .font(DS.Font.monoXS)
+                    .foregroundStyle(DS.Color.textMuted)
+            } else if let lastSave = store.lastSaveTime {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green.opacity(0.7))
+                Text(timeAgo(lastSave))
+                    .font(DS.Font.monoXS)
+                    .foregroundStyle(DS.Color.textMuted)
+            }
+        }
+        .frame(minWidth: 60)
+    }
+    
+    private func timeAgo(_ date: Date) -> String {
+        let seconds = Int(-date.timeIntervalSinceNow)
+        if seconds < 5 {
+            return "Sparat"
+        } else if seconds < 60 {
+            return "\(seconds)s sedan"
+        } else {
+            return "\(seconds / 60)m sedan"
+        }
     }
     
     // MARK: - Audio Interface Button
