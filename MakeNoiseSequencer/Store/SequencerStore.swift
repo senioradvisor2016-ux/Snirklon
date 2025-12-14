@@ -29,12 +29,36 @@ class SequencerStore: ObservableObject {
     @Published var hasSeenOnboarding: Bool = false
     @Published var tooltipsEnabled: Bool = true
     
+    // Additional panels
+    @Published var showExportDialog: Bool = false
+    @Published var showPresetBrowser: Bool = false
+    @Published var showMIDILearn: Bool = false
+    @Published var showTutorials: Bool = false
+    
+    // Managers
+    let undoManager = UndoManager()
+    let presetManager = PresetManager()
+    let midiLearnManager = MIDILearnManager()
+    let themeManager = ThemeManager()
+    let accessibilityManager = AccessibilityManager()
+    let tutorialManager = TutorialManager()
+    let exportManager = ExportManager()
+    let cloudSyncManager = CloudSyncManager()
+    
     // Timer for playback
     private var playbackTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
     init() {
         setupInitialPatterns()
+        checkFirstLaunch()
+    }
+    
+    private func checkFirstLaunch() {
+        if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
+            showOnboarding = true
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+        }
     }
     
     // MARK: - Setup

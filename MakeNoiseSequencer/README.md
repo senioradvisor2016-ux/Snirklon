@@ -120,6 +120,47 @@ MakeNoiseSequencer/
 - ✅ Comprehensive topic browser
 - ✅ Quick action suggestions
 - ✅ Visual feedback components
+- ✅ **Tutorial system** with step-by-step guides
+
+### Undo/Redo
+- ✅ Full undo/redo support (50 steps history)
+- ✅ Pattern snapshots for state restoration
+
+### Presets
+- ✅ **Save/Load presets** to disk
+- ✅ Preset categories (Factory, User, Drums, etc.)
+- ✅ Favorite presets
+- ✅ Search and filter
+
+### MIDI Learn
+- ✅ **Hardware controller mapping**
+- ✅ Learn any parameter from MIDI CC
+- ✅ Configurable min/max range
+- ✅ Persistent mappings
+
+### Themes
+- ✅ **Dark/Light mode**
+- ✅ System appearance follow
+- ✅ High contrast mode
+- ✅ Custom "Make Noise" theme
+
+### Accessibility
+- ✅ **VoiceOver support**
+- ✅ Accessibility labels and hints
+- ✅ Haptic feedback
+- ✅ Color blind modes
+- ✅ Reduced motion option
+- ✅ Custom text scaling
+
+### Export
+- ✅ **Export to MIDI** file
+- ✅ **Export to WAV** audio
+- ✅ Export to JSON preset
+
+### Cloud Sync
+- ✅ **iCloud synchronization**
+- ✅ Cross-device preset sharing
+- ✅ Settings sync
 
 ### Gestures
 | Gesture | Function |
