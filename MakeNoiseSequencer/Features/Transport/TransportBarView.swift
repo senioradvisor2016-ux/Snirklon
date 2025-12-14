@@ -8,6 +8,9 @@ struct TransportBarView: View {
             // Play/Stop
             TransportControls()
             
+            // Undo/Redo buttons
+            UndoRedoButtons()
+            
             Spacer()
             
             // BPM
@@ -40,6 +43,11 @@ struct TransportBarView: View {
                 Circle()
                     .fill(store.showKeyboardShortcuts ? DS.Color.surface2 : Color.clear)
             )
+            
+            // Latency indicator (Advanced mode only)
+            if store.features.showAudioInterface {
+                LatencyIndicator()
+            }
             
             // Audio Interface / CV Settings button (Advanced mode only)
             if store.features.showAudioInterface {

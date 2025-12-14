@@ -48,6 +48,19 @@ class SequencerStore: ObservableObject {
     @Published var copiedTrack: TrackModel?
     @Published var copiedSteps: [StepModel] = []
     
+    // MARK: - Undo History
+    @Published var undoHistory: [UndoAction] = []
+    @Published var redoStack: [UndoAction] = []
+    private let maxUndoHistory = 50
+    
+    var canUndo: Bool {
+        !undoHistory.isEmpty
+    }
+    
+    var canRedo: Bool {
+        !redoStack.isEmpty
+    }
+    
     // MARK: - Managers
     let undoManager = UndoManager()
     let presetManager = PresetManager()
@@ -403,6 +416,43 @@ class SequencerStore: ObservableObject {
         patterns[patternIdx].tracks[trackIdx].isSolo.toggle()
         triggerHaptic(.light)
         scheduleAutoSave()
+    }
+    
+    // MARK: - Track Reordering
+    
+    /// Ändra ordning på spår via drag-and-drop
+    func reorderTracks(from source: IndexSet, to destination: Int) {
+        guard let patternIdx = patterns.firstIndex(where: { $0.id == currentPattern?.id }) else { return }
+        
+        // Store previous order for undo
+        let previousTracks = patterns[patternIdx].tracks
+        
+        patterns[patternIdx].tracks.move(fromOffsets: source, toOffset: destination)
+        triggerHaptic(.medium)
+        scheduleAutoSave()
+        
+        toastManager.undo("Spår omordnade") { [weak self] in
+            guard let self = self else { return }
+            self.patterns[patternIdx].tracks = previousTracks
+            self.toastManager.success("Ångrade omordning")
+        }
+    }
+    
+    /// Ändra färg på ett spår
+    func setTrackColor(_ trackID: UUID, color: Color) {
+        guard let (patternIdx, trackIdx) = findTrack(trackID) else { return }
+        
+        let previousColor = patterns[patternIdx].tracks[trackIdx].color
+        patterns[patternIdx].tracks[trackIdx].color = color
+        scheduleAutoSave()
+        
+        toastManager.success("Färg ändrad")
+    }
+    
+    /// Hämta färg för ett spår
+    func trackColor(_ trackID: UUID) -> Color? {
+        guard let (patternIdx, trackIdx) = findTrack(trackID) else { return nil }
+        return patterns[patternIdx].tracks[trackIdx].color
     }
     
     // MARK: - Step Actions
@@ -1006,6 +1056,46 @@ class SequencerStore: ObservableObject {
     /// Visa humanize tip vid första användning
     func showHumanizeTipIfNeeded() {
         featureTipManager.showTipIfNeeded(.humanize)
+    }
+    
+    // MARK: - Undo/Redo Actions
+    
+    /// Lägg till en åtgärd i undo-historiken
+    func recordAction(_ action: UndoAction) {
+        undoHistory.insert(action, at: 0)
+        if undoHistory.count > maxUndoHistory {
+            undoHistory.removeLast()
+        }
+        redoStack.removeAll() // Clear redo when new action is recorded
+    }
+    
+    /// Utför undo
+    func performUndo() {
+        guard let action = undoHistory.first else { return }
+        undoHistory.removeFirst()
+        redoStack.insert(action, at: 0)
+        
+        // Trigger the actual undo via UndoManager if registered
+        undoManager.undo()
+        toastManager.info("Ångrade: \(action.name)")
+    }
+    
+    /// Utför redo
+    func performRedo() {
+        guard let action = redoStack.first else { return }
+        redoStack.removeFirst()
+        undoHistory.insert(action, at: 0)
+        
+        // Trigger the actual redo via UndoManager if registered
+        undoManager.redo()
+        toastManager.info("Gjorde om: \(action.name)")
+    }
+    
+    /// Ångra till en specifik punkt i historiken
+    func undoToAction(at index: Int) {
+        for _ in 0...index {
+            performUndo()
+        }
     }
     
     // MARK: - Haptic Feedback
