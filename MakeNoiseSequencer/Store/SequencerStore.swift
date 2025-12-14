@@ -19,6 +19,8 @@ class SequencerStore: ObservableObject {
     // Audio Interface / CV Output state
     @Published var selectedInterface: AudioInterfaceModel = .es9
     @Published var cvOutputConfigs: [CVOutputConfig] = []
+    @Published var cvTracks: [CVTrack] = []
+    @Published var selectedCVTrackID: UUID? = nil
     @Published var showSettings: Bool = false
     
     // Timer for playback
@@ -305,5 +307,94 @@ class SequencerStore: ObservableObject {
     
     func removeCVConfig(_ id: UUID) {
         cvOutputConfigs.removeAll { $0.id == id }
+    }
+    
+    // MARK: - CV Track Actions
+    
+    func addCVTrack() {
+        let nextChannel = (cvTracks.map { $0.outputChannel }.max() ?? 0) + 1
+        guard nextChannel <= selectedInterface.outputCount else { return }
+        
+        let trackNumber = cvTracks.count + 1
+        let newTrack = CVTrack(
+            name: "ENV \(trackNumber)",
+            outputChannel: nextChannel,
+            envelope: .percussion,
+            sourceTrackID: currentPattern?.tracks.first?.id
+        )
+        cvTracks.append(newTrack)
+        selectedCVTrackID = newTrack.id
+    }
+    
+    func removeCVTrack(_ id: UUID) {
+        cvTracks.removeAll { $0.id == id }
+        if selectedCVTrackID == id {
+            selectedCVTrackID = cvTracks.first?.id
+        }
+    }
+    
+    func selectCVTrack(_ id: UUID) {
+        selectedCVTrackID = id
+    }
+    
+    var selectedCVTrack: CVTrack? {
+        guard let id = selectedCVTrackID else { return nil }
+        return cvTracks.first { $0.id == id }
+    }
+    
+    func updateCVTrack(_ track: CVTrack) {
+        if let index = cvTracks.firstIndex(where: { $0.id == track.id }) {
+            cvTracks[index] = track
+        }
+    }
+    
+    func updateCVTrackEnvelope(_ trackID: UUID, envelope: ADSREnvelope) {
+        if let index = cvTracks.firstIndex(where: { $0.id == trackID }) {
+            cvTracks[index].envelope = envelope
+        }
+    }
+    
+    func setCVTrackSource(_ trackID: UUID, sourceTrackID: UUID?) {
+        if let index = cvTracks.firstIndex(where: { $0.id == trackID }) {
+            cvTracks[index].sourceTrackID = sourceTrackID
+        }
+    }
+    
+    func setCVTrackDestination(_ trackID: UUID, destination: ModulationDestination) {
+        if let index = cvTracks.firstIndex(where: { $0.id == trackID }) {
+            cvTracks[index].modulationDestination = destination
+        }
+    }
+    
+    func toggleCVTrackEnabled(_ trackID: UUID) {
+        if let index = cvTracks.firstIndex(where: { $0.id == trackID }) {
+            cvTracks[index].isEnabled.toggle()
+        }
+    }
+    
+    private func setupDefaultCVTracks() {
+        guard selectedInterface.isDCCoupled, let pattern = currentPattern else {
+            cvTracks = []
+            return
+        }
+        
+        // Create default CV tracks with envelopes for each sequencer track
+        var tracks: [CVTrack] = []
+        
+        for (index, seqTrack) in pattern.tracks.prefix(4).enumerated() {
+            let channel = index + 1
+            guard channel <= selectedInterface.outputCount else { break }
+            
+            tracks.append(CVTrack(
+                name: "ENV \(channel)",
+                outputChannel: channel,
+                envelope: index == 0 ? .kick : (index == 1 ? .snare : .percussion),
+                sourceTrackID: seqTrack.id,
+                modulationDestination: .vca
+            ))
+        }
+        
+        cvTracks = tracks
+        selectedCVTrackID = tracks.first?.id
     }
 }

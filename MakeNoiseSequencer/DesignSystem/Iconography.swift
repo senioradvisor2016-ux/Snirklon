@@ -63,12 +63,21 @@ enum Iconography {
   }
   
   // SF Symbols for CV/Settings
-  enum SVCV {
+  enum SFCV {
     static let settings = "slider.horizontal.3"
     static let output   = "arrow.right.circle"
     static let input    = "arrow.left.circle"
     static let voltage  = "bolt"
     static let waveform = "waveform"
     static let link     = "link"
+    
+    // ADSR Envelope
+    static let envelope  = "waveform.path"
+    static let attack    = "arrow.up.right"
+    static let decay     = "arrow.down.right"
+    static let sustain   = "minus"
+    static let release   = "arrow.down.right.circle"
+    static let retrigger = "arrow.clockwise"
+    static let loop      = "repeat"
   }
 }
