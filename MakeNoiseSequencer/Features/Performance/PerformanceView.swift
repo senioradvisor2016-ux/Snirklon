@@ -39,9 +39,22 @@ struct PerformanceView: View {
                     AudioInterfaceSettingsView()
                         .transition(.move(edge: .trailing))
                 }
+                
+                // Help panel
+                if store.showHelp {
+                    HelpChatView()
+                        .transition(.move(edge: .trailing))
+                }
             }
         }
         .animation(DS.Anim.fast, value: store.selection.showInspector)
         .animation(DS.Anim.fast, value: store.showSettings)
+        .animation(DS.Anim.fast, value: store.showHelp)
+        .overlay {
+            // Onboarding overlay
+            if store.showOnboarding {
+                OnboardingOverlay()
+            }
+        }
     }
 }

@@ -23,6 +23,12 @@ class SequencerStore: ObservableObject {
     @Published var selectedCVTrackID: UUID? = nil
     @Published var showSettings: Bool = false
     
+    // Help & Onboarding state
+    @Published var showHelp: Bool = false
+    @Published var showOnboarding: Bool = false
+    @Published var hasSeenOnboarding: Bool = false
+    @Published var tooltipsEnabled: Bool = true
+    
     // Timer for playback
     private var playbackTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -370,6 +376,29 @@ class SequencerStore: ObservableObject {
         if let index = cvTracks.firstIndex(where: { $0.id == trackID }) {
             cvTracks[index].isEnabled.toggle()
         }
+    }
+    
+    // MARK: - Help Actions
+    
+    func toggleHelp() {
+        showHelp.toggle()
+        // Close other panels when opening help
+        if showHelp {
+            showSettings = false
+        }
+    }
+    
+    func showOnboardingGuide() {
+        showOnboarding = true
+    }
+    
+    func completeOnboarding() {
+        hasSeenOnboarding = true
+        showOnboarding = false
+    }
+    
+    func toggleTooltips() {
+        tooltipsEnabled.toggle()
     }
     
     private func setupDefaultCVTracks() {

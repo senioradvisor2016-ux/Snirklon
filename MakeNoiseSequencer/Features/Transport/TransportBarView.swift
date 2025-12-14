@@ -83,6 +83,18 @@ struct TransportBarView: View {
                 }
             }
             .modifier(PanelStyles.panelButtonModifier(isOn: store.showSettings))
+            
+            // Help button
+            Button(action: { store.toggleHelp() }) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(store.showHelp ? DS.Color.led : DS.Color.textSecondary)
+            }
+            .frame(width: 36, height: 36)
+            .background(
+                Circle()
+                    .fill(store.showHelp ? DS.Color.surface2 : DS.Color.surface)
+            )
         }
         .padding(.horizontal, DS.Space.l)
         .frame(height: DS.Size.transportHeight)
