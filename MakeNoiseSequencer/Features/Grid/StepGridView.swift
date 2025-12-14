@@ -3,7 +3,10 @@ import SwiftUI
 struct StepGridView: View {
     @EnvironmentObject var store: SequencerStore
     
-    private let columns = Array(repeating: GridItem(.fixed(DS.Size.minTouch + DS.Space.xxs), spacing: DS.Space.xxs), count: 16)
+    /// Maximum steps to display (64 = Cirklon max)
+    private var stepCount: Int {
+        store.currentPattern?.tracks.first?.length ?? 64
+    }
     
     var body: some View {
         ZStack {
@@ -13,7 +16,7 @@ struct StepGridView: View {
             ScrollView([.horizontal, .vertical], showsIndicators: false) {
                 VStack(alignment: .leading, spacing: DS.Space.s) {
                     // Grid ruler at top
-                    GridRulerView(stepCount: 16, currentStep: store.currentStep, isPlaying: store.isPlaying)
+                    GridRulerView(stepCount: stepCount, currentStep: store.currentStep, isPlaying: store.isPlaying)
                         .padding(.leading, DS.Space.xs)
                     
                     // Step grid
