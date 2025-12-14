@@ -224,7 +224,7 @@ export const LEAD_PRESETS: Record<string, SynthPatch> = {
         type: 'delay',
         bypass: false,
         mix: 0.2,
-        params: { time: 0.375, feedback: 0.3, pingPong: true }
+        params: { time: 0.375, feedback: 0.3, pingPong: 1 }
       }], 
       bypass: false 
     },
@@ -468,7 +468,7 @@ export const PLUCK_PRESETS: Record<string, SynthPatch> = {
     modMatrix: [],
     effects: { 
       effects: [
-        { type: 'delay', bypass: false, mix: 0.3, params: { time: 0.375, feedback: 0.4, pingPong: true } },
+        { type: 'delay', bypass: false, mix: 0.3, params: { time: 0.375, feedback: 0.4, pingPong: 1 } },
         { type: 'reverb', bypass: false, mix: 0.2, params: { size: 0.5, decay: 1.5 } },
       ], 
       bypass: false 
