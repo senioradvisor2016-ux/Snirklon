@@ -8,6 +8,8 @@ struct StepGridView: View {
     @State private var paintState: Bool? = nil  // nil = not painting, true = turn on, false = turn off
     @State private var lastPaintedStep: UUID? = nil
     @State private var showToolbar: Bool = false
+    @State private var showActionBar: Bool = false
+    @State private var showMiniInspector: Bool = false
     
     /// Grid geometry
     private let stepWidth: CGFloat = DS.Size.minTouch + DS.Space.xxs
@@ -68,6 +70,39 @@ struct StepGridView: View {
                     Spacer()
                 }
             }
+            
+            // Action bar when step is selected
+            if store.selection.hasSelection, let step = store.selectedStep {
+                VStack {
+                    Spacer()
+                    StepActionBar(step: step)
+                        .padding(.bottom, DS.Space.l)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: store.selection.selectedStepIDs)
+            }
+            
+            // Mini inspector popover
+            if showMiniInspector, let step = store.selectedStep, let track = store.selectedTrack {
+                VStack {
+                    HStack {
+                        Spacer()
+                        MiniInspectorView(
+                            step: step,
+                            trackColor: track.color,
+                            onDismiss: { showMiniInspector = false },
+                            onOpenFullInspector: {
+                                showMiniInspector = false
+                                store.openInspector()
+                            }
+                        )
+                        .padding(DS.Space.m)
+                    }
+                    Spacer()
+                }
+                .transition(.scale.combined(with: .opacity))
+                .animation(.spring(response: 0.3), value: showMiniInspector)
+            }
         }
         .toolbar {
             // Toolbar toggle (Advanced mode only)
@@ -79,6 +114,55 @@ struct StepGridView: View {
                     }
                 }
             }
+        }
+        // MARK: - Keyboard Navigation
+        .focusable()
+        .onKeyPress(.leftArrow) {
+            store.selectPreviousStep()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            store.selectNextStep()
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            store.selectPreviousTrack()
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            store.selectNextTrack()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            store.togglePlayback()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            store.toggleSelectedStep()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("i")], modifiers: .command) {
+            store.openInspector()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("h")], modifiers: .command) {
+            store.humanize()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("e")], modifiers: .command) {
+            store.toggleEuclideanGenerator()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("m")], modifiers: .command) {
+            if store.selection.hasSelection {
+                showMiniInspector.toggle()
+            }
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            showMiniInspector = false
+            store.selection.clearSelection()
+            return .handled
         }
     }
     

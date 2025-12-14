@@ -8,6 +8,9 @@ struct TransportBarView: View {
             // Play/Stop
             TransportControls()
             
+            // Undo/Redo buttons
+            UndoRedoButtons()
+            
             Spacer()
             
             // BPM
@@ -41,6 +44,11 @@ struct TransportBarView: View {
                     .fill(store.showKeyboardShortcuts ? DS.Color.surface2 : Color.clear)
             )
             
+            // Latency indicator (Advanced mode only)
+            if store.features.showAudioInterface {
+                LatencyIndicator()
+            }
+            
             // Audio Interface / CV Settings button (Advanced mode only)
             if store.features.showAudioInterface {
                 audioInterfaceButton
@@ -62,30 +70,101 @@ struct TransportBarView: View {
     
     // MARK: - BPM Control
     
+    @State private var showBPMInput: Bool = false
+    @State private var bpmInputValue: String = ""
+    
     private var bpmControl: some View {
-        HStack(spacing: DS.Space.xs) {
-            Text(Iconography.Label.bpm)
-                .font(DS.Font.monoS)
-                .foregroundStyle(DS.Color.textSecondary)
-            
-            Text("\(store.bpm)")
-                .font(DS.Font.monoL)
-                .foregroundStyle(DS.Color.textPrimary)
-                .frame(minWidth: 44)
-            
-            VStack(spacing: 2) {
-                Button(action: { store.setBPM(store.bpm + 1) }) {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                Button(action: { store.setBPM(store.bpm - 1) }) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
+        HStack(spacing: DS.Space.s) {
+            // Minus-knapp med 44×44pt touch target
+            Button(action: { store.setBPM(store.bpm - 1) }) {
+                Image(systemName: "minus")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(DS.Color.textSecondary)
+                    .frame(width: DS.Size.minTouch, height: DS.Size.minTouch)
+                    .background(DS.Color.surface2)
+                    .cornerRadius(DS.Radius.s)
             }
-            .foregroundStyle(DS.Color.textSecondary)
+            .buttonStyle(.plain)
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.3)
+                    .onEnded { _ in startBPMDecrement() }
+            )
+            .accessibilityLabel("Minska tempo")
+            .accessibilityHint("Håll nedtryckt för snabb minskning")
+            
+            // BPM-värde (tappbart för direktinmatning)
+            Button(action: { 
+                bpmInputValue = "\(store.bpm)"
+                showBPMInput = true 
+            }) {
+                VStack(spacing: 2) {
+                    Text(Iconography.Label.bpm)
+                        .font(DS.Font.monoXS)
+                        .foregroundStyle(DS.Color.textMuted)
+                    Text("\(store.bpm)")
+                        .font(DS.Font.monoL)
+                        .foregroundStyle(DS.Color.textPrimary)
+                }
+                .frame(minWidth: 56)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Tempo \(store.bpm) slag per minut")
+            .accessibilityHint("Dubbelklicka för att ange exakt värde")
+            
+            // Plus-knapp med 44×44pt touch target
+            Button(action: { store.setBPM(store.bpm + 1) }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(DS.Color.textSecondary)
+                    .frame(width: DS.Size.minTouch, height: DS.Size.minTouch)
+                    .background(DS.Color.surface2)
+                    .cornerRadius(DS.Radius.s)
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.3)
+                    .onEnded { _ in startBPMIncrement() }
+            )
+            .accessibilityLabel("Öka tempo")
+            .accessibilityHint("Håll nedtryckt för snabb ökning")
         }
         .modifier(PanelStyles.panelButtonModifier(isOn: false))
+        .alert("Ange BPM", isPresented: $showBPMInput) {
+            TextField("BPM", text: $bpmInputValue)
+                .keyboardType(.numberPad)
+            Button("OK") {
+                if let newBPM = Int(bpmInputValue) {
+                    store.setBPM(newBPM)
+                }
+            }
+            Button("Avbryt", role: .cancel) { }
+        } message: {
+            Text("Ange tempo (20-300 BPM)")
+        }
+    }
+    
+    @State private var bpmTimer: Timer?
+    
+    private func startBPMIncrement() {
+        HapticEngine.light()
+        bpmTimer?.invalidate()
+        bpmTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            if store.bpm < 300 {
+                store.setBPM(store.bpm + 1)
+                HapticEngine.tick()
+            }
+        }
+    }
+    
+    private func startBPMDecrement() {
+        HapticEngine.light()
+        bpmTimer?.invalidate()
+        bpmTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            if store.bpm > 20 {
+                store.setBPM(store.bpm - 1)
+                HapticEngine.tick()
+            }
+        }
     }
     
     // MARK: - Swing Control
