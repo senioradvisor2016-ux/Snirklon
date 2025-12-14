@@ -76,6 +76,7 @@ class SequencerStore: ObservableObject {
     
     // MARK: - Playback Engine
     private var playbackCancellable: AnyCancellable?
+    private var playbackTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var autoSaveDebouncer: Debouncer?
     
@@ -194,6 +195,7 @@ class SequencerStore: ObservableObject {
     func stop() {
         isPlaying = false
         stopPlaybackTimer()
+        cancelRatchets()
         currentStep = 0
         triggerHaptic(.medium)
     }
@@ -220,23 +222,38 @@ class SequencerStore: ObservableObject {
     }
     
     private func startPlaybackTimer() {
-        let interval = 60.0 / Double(bpm) / 4.0  // 16th notes
+        stopPlaybackTimer()
         
-        playbackCancellable = Timer.publish(every: interval, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.advanceStep()
+        playbackTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self else { break }
+                
+                let interval = 60.0 / Double(self.bpm) / 4.0  // 16th notes
+                let nanoseconds = UInt64(interval * 1_000_000_000)
+                
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                
+                guard !Task.isCancelled else { break }
+                
+                await MainActor.run { [weak self] in
+                    self?.advanceStep()
+                }
             }
+        }
     }
     
     private func stopPlaybackTimer() {
+        playbackTask?.cancel()
+        playbackTask = nil
         playbackCancellable?.cancel()
         playbackCancellable = nil
     }
     
     private func restartPlaybackTimer() {
         stopPlaybackTimer()
-        startPlaybackTimer()
+        if isPlaying {
+            startPlaybackTimer()
+        }
     }
     
     private func advanceStep() {
@@ -294,21 +311,35 @@ class SequencerStore: ObservableObject {
         #endif
     }
     
+    private var ratchetTasks: [Task<Void, Never>] = []
+    
     private func scheduleRatchets(step: StepModel, track: TrackModel) {
         let baseInterval = 60.0 / Double(bpm) / 4.0
         let ratchetInterval = baseInterval / Double(step.repeat_ + 1)
         
         for i in 1...step.repeat_ {
-            DispatchQueue.main.asyncAfter(deadline: .now() + ratchetInterval * Double(i)) { [weak self] in
-                guard self?.isPlaying == true else { return }
-                self?.triggerNote(
-                    note: step.note,
-                    velocity: Int(Double(step.velocity) * 0.8),
-                    channel: track.midiChannel,
-                    length: step.length / (step.repeat_ + 1)
-                )
+            let task = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(ratchetInterval * Double(i) * 1_000_000_000))
+                
+                guard !Task.isCancelled else { return }
+                
+                await MainActor.run { [weak self] in
+                    guard let self = self, self.isPlaying else { return }
+                    self.triggerNote(
+                        note: step.note,
+                        velocity: Int(Double(step.velocity) * 0.8),
+                        channel: track.midiChannel,
+                        length: step.length / (step.repeat_ + 1)
+                    )
+                }
             }
+            ratchetTasks.append(task)
         }
+    }
+    
+    private func cancelRatchets() {
+        ratchetTasks.forEach { $0.cancel() }
+        ratchetTasks.removeAll()
     }
     
     // MARK: - Track Actions
@@ -712,7 +743,14 @@ class SequencerStore: ObservableObject {
     
     func selectPattern(_ index: Int) {
         guard index >= 0 && index < patterns.count else { return }
+        
+        // Cache current pattern before switching
+        PatternCache.shared.cache(patterns[currentPatternIndex], at: currentPatternIndex)
+        
         currentPatternIndex = index
+        
+        // Preload adjacent patterns in background
+        PatternCache.shared.preload(currentIndex: index, patterns: patterns)
         
         // Maintain track selection if possible
         if let trackID = selection.selectedTrackID,

@@ -40,23 +40,24 @@ enum DS {
   }
 
   enum Color {
-    static let background = SwiftUI.Color.black.opacity(0.96)
-    static let surface    = SwiftUI.Color.white.opacity(0.06)
-    static let surface2   = SwiftUI.Color.white.opacity(0.08)
-    static let cutout     = SwiftUI.Color.white.opacity(0.04)
+    // Pre-computed colors for better performance (avoid opacity calculations at runtime)
+    static let background = SwiftUI.Color(red: 0.04, green: 0.04, blue: 0.04) // black.opacity(0.96)
+    static let surface    = SwiftUI.Color(white: 0.06)
+    static let surface2   = SwiftUI.Color(white: 0.08)
+    static let cutout     = SwiftUI.Color(white: 0.04)
 
-    static let etchedLine = SwiftUI.Color.white.opacity(0.10)
-    static let etchedLineSoft = SwiftUI.Color.white.opacity(0.06)
+    static let etchedLine = SwiftUI.Color(white: 0.10)
+    static let etchedLineSoft = SwiftUI.Color(white: 0.06)
 
     static let textPrimary   = SwiftUI.Color.white
-    static let textSecondary = SwiftUI.Color.white.opacity(0.62)
-    static let textMuted     = SwiftUI.Color.white.opacity(0.40)
+    static let textSecondary = SwiftUI.Color(white: 0.62)
+    static let textMuted     = SwiftUI.Color(white: 0.40)
 
-    static let selectedFill   = SwiftUI.Color.white.opacity(0.10)
-    static let selectedStroke = SwiftUI.Color.white.opacity(0.65)
+    static let selectedFill   = SwiftUI.Color(white: 0.10)
+    static let selectedStroke = SwiftUI.Color(white: 0.65)
 
-    static let led     = SwiftUI.Color.white.opacity(0.92)
-    static let ledSoft = SwiftUI.Color.white.opacity(0.55)
+    static let led     = SwiftUI.Color(white: 0.92)
+    static let ledSoft = SwiftUI.Color(white: 0.55)
 
     static let accent = SwiftUI.Color(red: 0.82, green: 0.86, blue: 0.92) // cold off-white
   }
@@ -65,5 +66,20 @@ enum DS {
     static let minTouch: CGFloat = 44
     static let inspectorWidth: CGFloat = 320
     static let transportHeight: CGFloat = 56
+    
+    // Pre-computed grid dimensions for performance
+    static let stepWidth: CGFloat = minTouch + Space.xxs  // 48
+    static let stepHeight: CGFloat = minTouch + Space.s   // 54
   }
+}
+
+// MARK: - Performance Optimizations
+
+extension DS {
+    /// Pre-computed step grid dimensions
+    enum Grid {
+        static let stepWidth: CGFloat = Size.minTouch + Space.xxs
+        static let stepHeight: CGFloat = Size.minTouch + Space.s
+        static let rulerHeight: CGFloat = 24
+    }
 }
