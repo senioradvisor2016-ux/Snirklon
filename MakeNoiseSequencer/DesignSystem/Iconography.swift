@@ -47,5 +47,37 @@ enum Iconography {
     static let swing = "SWNG"
     static let quant = "QNTZ"
     static let loop  = "LOOP"
+    
+    // CV / Audio Interface labels
+    static let cv    = "CV"
+    static let gate  = "GATE"
+    static let pitch = "PITCH"
+    static let mod   = "MOD"
+    static let clock = "CLK"
+    static let trig  = "TRIG"
+    static let env   = "ENV"
+    static let lfo   = "LFO"
+    static let dc    = "DC"
+    static let out   = "OUT"
+    static let input = "IN"
+  }
+  
+  // SF Symbols for CV/Settings
+  enum SFCV {
+    static let settings = "slider.horizontal.3"
+    static let output   = "arrow.right.circle"
+    static let input    = "arrow.left.circle"
+    static let voltage  = "bolt"
+    static let waveform = "waveform"
+    static let link     = "link"
+    
+    // ADSR Envelope
+    static let envelope  = "waveform.path"
+    static let attack    = "arrow.up.right"
+    static let decay     = "arrow.down.right"
+    static let sustain   = "minus"
+    static let release   = "arrow.down.right.circle"
+    static let retrigger = "arrow.clockwise"
+    static let loop      = "repeat"
   }
 }

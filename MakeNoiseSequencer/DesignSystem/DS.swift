@@ -33,6 +33,7 @@ enum DS {
     static let label   = SwiftUI.Font.system(.subheadline, design: .default)
     static let caption = SwiftUI.Font.system(.caption, design: .default)
 
+    static let monoXS = SwiftUI.Font.system(.caption2, design: .monospaced)
     static let monoS = SwiftUI.Font.system(.caption, design: .monospaced)
     static let monoM = SwiftUI.Font.system(.body, design: .monospaced)
     static let monoL = SwiftUI.Font.system(.headline, design: .monospaced)
