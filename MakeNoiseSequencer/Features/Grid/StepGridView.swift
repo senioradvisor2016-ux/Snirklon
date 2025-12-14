@@ -14,9 +14,15 @@ struct StepGridView: View {
     private let stepHeight: CGFloat = DS.Size.minTouch + DS.Space.s
     private let rulerHeight: CGFloat = 24
     
-    /// Maximum steps to display (64 = Cirklon max)
+    /// Maximum steps to display based on mode
     private var stepCount: Int {
-        store.currentPattern?.tracks.first?.length ?? 64
+        let trackLength = store.currentPattern?.tracks.first?.length ?? 64
+        return min(trackLength, store.features.maxTrackLength)
+    }
+    
+    /// Whether paint mode is enabled (Advanced only)
+    private var paintEnabled: Bool {
+        store.features.enablePaintMode
     }
     
     var body: some View {
@@ -25,13 +31,13 @@ struct StepGridView: View {
             PanelStyles.etchedGrid(spacing: DS.Size.minTouch + DS.Space.xxs)
             
             VStack(spacing: 0) {
-                // Toolbar
-                if showToolbar {
+                // Toolbar (Advanced mode only)
+                if showToolbar && store.features.showGridToolbar {
                     gridToolbar
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 
-                // Main grid with paint gesture
+                // Main grid with optional paint gesture
                 ScrollView([.horizontal, .vertical], showsIndicators: false) {
                     VStack(alignment: .leading, spacing: DS.Space.s) {
                         // Grid ruler at top
@@ -47,12 +53,12 @@ struct StepGridView: View {
                     }
                     .padding(DS.Space.m)
                     .contentShape(Rectangle())
-                    .gesture(paintGesture)
+                    .gesture(paintEnabled ? paintGesture : nil)
                 }
             }
             
-            // Paint mode indicator
-            if isPainting {
+            // Paint mode indicator (Advanced only)
+            if isPainting && paintEnabled {
                 VStack {
                     HStack {
                         Spacer()
@@ -64,10 +70,13 @@ struct StepGridView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: { withAnimation(DS.Anim.fast) { showToolbar.toggle() } }) {
-                    Image(systemName: showToolbar ? "chevron.up" : "slider.horizontal.3")
-                        .foregroundStyle(DS.Color.textSecondary)
+            // Toolbar toggle (Advanced mode only)
+            if store.features.showGridToolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { withAnimation(DS.Anim.fast) { showToolbar.toggle() } }) {
+                        Image(systemName: showToolbar ? "chevron.up" : "slider.horizontal.3")
+                            .foregroundStyle(DS.Color.textSecondary)
+                    }
                 }
             }
         }

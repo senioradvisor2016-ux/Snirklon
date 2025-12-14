@@ -50,6 +50,19 @@ class SequencerStore: ObservableObject {
     let tutorialManager = TutorialManager()
     let exportManager = ExportManager()
     let cloudSyncManager = CloudSyncManager()
+    let modeManager = UserModeManager()
+    
+    // MARK: - Mode Convenience
+    
+    /// Current feature visibility based on mode
+    var features: ModeFeatures {
+        modeManager.features
+    }
+    
+    /// Whether in advanced mode
+    var isAdvancedMode: Bool {
+        modeManager.isAdvanced
+    }
     
     // MARK: - Playback Engine
     private var playbackCancellable: AnyCancellable?

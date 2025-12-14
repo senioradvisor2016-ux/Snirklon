@@ -4,6 +4,11 @@ struct InspectorStepSection: View {
     @EnvironmentObject var store: SequencerStore
     @State private var showAdvanced: Bool = false
     
+    /// Whether to show advanced controls (mode-dependent)
+    private var showAdvancedControls: Bool {
+        store.features.showAdvancedInspector
+    }
+    
     var body: some View {
         VStack(spacing: DS.Space.m) {
             // Section header
@@ -40,21 +45,23 @@ struct InspectorStepSection: View {
                             onChange: { store.setStepNote(step.id, note: $0) }
                         )
                         
-                        // Octave shortcuts
-                        HStack(spacing: 2) {
-                            ForEach([-12, -1, 1, 12], id: \.self) { delta in
-                                Button(action: {
-                                    let newNote = max(0, min(127, step.note + delta))
-                                    store.setStepNote(step.id, note: newNote)
-                                }) {
-                                    Text(delta > 0 ? "+\(delta)" : "\(delta)")
-                                        .font(DS.Font.monoXS)
-                                        .foregroundStyle(DS.Color.textMuted)
-                                        .frame(width: 28, height: 24)
-                                        .background(DS.Color.surface)
-                                        .cornerRadius(4)
+                        // Octave shortcuts (Advanced mode)
+                        if showAdvancedControls {
+                            HStack(spacing: 2) {
+                                ForEach([-12, -1, 1, 12], id: \.self) { delta in
+                                    Button(action: {
+                                        let newNote = max(0, min(127, step.note + delta))
+                                        store.setStepNote(step.id, note: newNote)
+                                    }) {
+                                        Text(delta > 0 ? "+\(delta)" : "\(delta)")
+                                            .font(DS.Font.monoXS)
+                                            .foregroundStyle(DS.Color.textMuted)
+                                            .frame(width: 28, height: 24)
+                                            .background(DS.Color.surface)
+                                            .cornerRadius(4)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -70,10 +77,12 @@ struct InspectorStepSection: View {
                             onChange: { store.setStepVelocity(step.id, velocity: $0) }
                         )
                         
-                        Text(step.velocityDescription)
-                            .font(DS.Font.monoS)
-                            .foregroundStyle(DS.Color.textMuted)
-                            .frame(width: 30)
+                        if showAdvancedControls {
+                            Text(step.velocityDescription)
+                                .font(DS.Font.monoS)
+                                .foregroundStyle(DS.Color.textMuted)
+                                .frame(width: 30)
+                        }
                     }
                     
                     // Length with musical notation
@@ -87,76 +96,90 @@ struct InspectorStepSection: View {
                             onChange: { store.setStepLength(step.id, length: $0) }
                         )
                         
-                        Text(step.lengthDescription)
-                            .font(DS.Font.monoS)
-                            .foregroundStyle(DS.Color.textMuted)
-                            .frame(width: 40)
-                    }
-                    
-                    Divider()
-                        .background(DS.Color.etchedLineSoft)
-                    
-                    // Probability
-                    SteppedValueControl(
-                        label: Iconography.Label.prob,
-                        value: step.probability,
-                        min: 0,
-                        max: 100,
-                        step: 10,
-                        suffix: "%",
-                        onChange: { store.setStepProbability(step.id, probability: $0) }
-                    )
-                    
-                    // Ratchet / Repeat
-                    SteppedValueControl(
-                        label: "RATCHET",
-                        value: step.repeat_,
-                        min: 0,
-                        max: 8,
-                        step: 1,
-                        onChange: { store.setStepRepeat(step.id, repeatCount: $0) }
-                    )
-                    
-                    // Advanced section toggle
-                    Button(action: { withAnimation(DS.Anim.fast) { showAdvanced.toggle() } }) {
-                        HStack {
-                            Text("ADVANCED")
-                                .font(DS.Font.monoXS)
+                        if showAdvancedControls {
+                            Text(step.lengthDescription)
+                                .font(DS.Font.monoS)
                                 .foregroundStyle(DS.Color.textMuted)
-                            Spacer()
-                            Image(systemName: showAdvanced ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10))
-                                .foregroundStyle(DS.Color.textMuted)
+                                .frame(width: 40)
                         }
                     }
-                    .buttonStyle(.plain)
                     
-                    if showAdvanced {
-                        VStack(spacing: DS.Space.s) {
-                            // Timing offset
+                    // Advanced controls (Probability, Ratchet, etc.)
+                    if showAdvancedControls {
+                        Divider()
+                            .background(DS.Color.etchedLineSoft)
+                        
+                        // Probability
+                        if store.features.showProbability {
                             SteppedValueControl(
-                                label: "TIMING",
-                                value: step.timing,
-                                min: -48,
-                                max: 48,
-                                step: 1,
-                                onChange: { store.adjustTiming(for: step.id, delta: $0 - step.timing) }
+                                label: Iconography.Label.prob,
+                                value: step.probability,
+                                min: 0,
+                                max: 100,
+                                step: 10,
+                                suffix: "%",
+                                onChange: { store.setStepProbability(step.id, probability: $0) }
                             )
-                            
-                            // Toggles row
-                            HStack(spacing: DS.Space.s) {
-                                // Slide toggle would need store method
-                                ToggleChip(
-                                    label: "SLIDE",
-                                    isOn: step.slide,
-                                    onToggle: { /* TODO: Add slide toggle to store */ }
-                                )
+                        }
+                        
+                        // Ratchet / Repeat
+                        if store.features.showRatchet {
+                            SteppedValueControl(
+                                label: "RATCHET",
+                                value: step.repeat_,
+                                min: 0,
+                                max: 8,
+                                step: 1,
+                                onChange: { store.setStepRepeat(step.id, repeatCount: $0) }
+                            )
+                        }
+                        
+                        // Advanced section toggle
+                        Button(action: { withAnimation(DS.Anim.fast) { showAdvanced.toggle() } }) {
+                            HStack {
+                                Text("AVANCERAT")
+                                    .font(DS.Font.monoXS)
+                                    .foregroundStyle(DS.Color.textMuted)
+                                Spacer()
+                                Image(systemName: showAdvanced ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(DS.Color.textMuted)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        
+                        if showAdvanced {
+                            VStack(spacing: DS.Space.s) {
+                                // Timing offset
+                                if store.features.showTiming {
+                                    SteppedValueControl(
+                                        label: "TIMING",
+                                        value: step.timing,
+                                        min: -48,
+                                        max: 48,
+                                        step: 1,
+                                        onChange: { store.adjustTiming(for: step.id, delta: $0 - step.timing) }
+                                    )
+                                }
                                 
-                                ToggleChip(
-                                    label: "ACCENT",
-                                    isOn: step.accent,
-                                    onToggle: { /* TODO: Add accent toggle to store */ }
-                                )
+                                // Toggles row
+                                HStack(spacing: DS.Space.s) {
+                                    if store.features.showSlide {
+                                        ToggleChip(
+                                            label: "SLIDE",
+                                            isOn: step.slide,
+                                            onToggle: { /* TODO: Add slide toggle to store */ }
+                                        )
+                                    }
+                                    
+                                    if store.features.showAccent {
+                                        ToggleChip(
+                                            label: "ACCENT",
+                                            isOn: step.accent,
+                                            onToggle: { /* TODO: Add accent toggle to store */ }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

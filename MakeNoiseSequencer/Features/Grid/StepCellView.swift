@@ -6,6 +6,8 @@ import SwiftUI
 // - DS tokens only (no ad-hoc styling)
 
 struct StepCellView: View {
+    @EnvironmentObject var store: SequencerStore
+    
     let step: StepModel
     let isSelected: Bool
     let isPlaying: Bool
@@ -19,6 +21,11 @@ struct StepCellView: View {
     
     @State private var pulseOn: Bool = false
     @State private var lastVelocityDelta: Int = 0
+    
+    /// Whether to show step indicators (Advanced mode)
+    private var showIndicators: Bool {
+        store.features.showStepIndicators
+    }
     
     var body: some View {
         ZStack {
@@ -97,7 +104,8 @@ struct StepCellView: View {
     
     @ViewBuilder
     private var stepIndicators: some View {
-        if step.isOn && !isSelected {
+        // Only show in Advanced mode
+        if step.isOn && !isSelected && showIndicators {
             VStack {
                 HStack {
                     // Probability indicator (if < 100%)

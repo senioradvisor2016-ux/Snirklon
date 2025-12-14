@@ -13,6 +13,30 @@ A Cirklon-inspired 64-step sequencer app with Make Noise-inspired panel aestheti
 - **Touch targets** ≥ 44×44 points
 - **Design System tokens only** - No ad-hoc styling
 - **Contextual help** - Help always one click away
+- **Progressive disclosure** - Standard/Advanced modes
+
+## User Modes
+
+### Standard Mode
+Perfect för nybörjare och snabbt arbetsflöde:
+- 4 mönster × 4 spår × **16 steg**
+- Note, Velocity, Length per steg
+- Play/Stop, BPM kontroll
+- Mute/Solo per spår
+- Enkel inspector
+
+### Advanced Mode
+Full kontroll för erfarna användare:
+- 4 mönster × 4 spår × **64 steg**
+- Probability, Ratchet, Timing per steg
+- Euclidean generator
+- Drag-to-paint mode
+- CV/Gate output med ADSR
+- MIDI Learn
+- Export MIDI/WAV
+- Alla kortkommandon aktiverade
+
+**Växla läge:** Klicka på STD/ADV-knappen i transportfältet eller tryck `⌘M`
 
 ## Project Structure
 
@@ -32,7 +56,8 @@ MakeNoiseSequencer/
 │   ├── SelectionModel.swift
 │   ├── AudioInterfaceModel.swift      # DC-coupled audio interfaces
 │   ├── ADSRModel.swift                # ADSR envelope generator
-│   └── HelpModel.swift                # Help content database
+│   ├── HelpModel.swift                # Help content database
+│   └── UserModeModel.swift            # Standard/Advanced mode
 ├── Store/
 │   └── SequencerStore.swift           # Central state management
 ├── Utils/
@@ -227,6 +252,7 @@ MakeNoiseSequencer/
 | Shortcut | Function |
 |----------|----------|
 | `⌘I` | Toggle inspector |
+| `⌘M` | Toggle Standard/Advanced mode |
 | `⌘,` | Settings |
 | `⌘/` | Help |
 | `1-8` | Switch pattern 1-8 |
