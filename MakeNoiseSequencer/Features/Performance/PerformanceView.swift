@@ -29,12 +29,19 @@ struct PerformanceView: View {
                 }
                 
                 // Inspector panel (conditionally shown)
-                if store.selection.showInspector {
+                if store.selection.showInspector && !store.showSettings {
                     InspectorPanelView()
+                        .transition(.move(edge: .trailing))
+                }
+                
+                // Audio Interface Settings panel
+                if store.showSettings {
+                    AudioInterfaceSettingsView()
                         .transition(.move(edge: .trailing))
                 }
             }
         }
         .animation(DS.Anim.fast, value: store.selection.showInspector)
+        .animation(DS.Anim.fast, value: store.showSettings)
     }
 }

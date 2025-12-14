@@ -16,6 +16,11 @@ class SequencerStore: ObservableObject {
     // Selection state
     @Published var selection: SelectionModel = SelectionModel()
     
+    // Audio Interface / CV Output state
+    @Published var selectedInterface: AudioInterfaceModel = .es9
+    @Published var cvOutputConfigs: [CVOutputConfig] = []
+    @Published var showSettings: Bool = false
+    
     // Timer for playback
     private var playbackTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -235,5 +240,70 @@ class SequencerStore: ObservableObject {
         }
         
         selection.clearSelection()
+    }
+    
+    // MARK: - Audio Interface Actions
+    
+    func selectAudioInterface(_ interface: AudioInterfaceModel) {
+        selectedInterface = interface
+        // Reset CV configs when interface changes
+        setupDefaultCVConfigs()
+    }
+    
+    func toggleSettings() {
+        showSettings.toggle()
+    }
+    
+    private func setupDefaultCVConfigs() {
+        guard selectedInterface.isDCCoupled else {
+            cvOutputConfigs = []
+            return
+        }
+        
+        // Create default CV output configs based on interface and tracks
+        var configs: [CVOutputConfig] = []
+        
+        if let pattern = currentPattern {
+            for (index, track) in pattern.tracks.enumerated() {
+                let channelBase = index * 2
+                
+                // Pitch CV
+                if channelBase < selectedInterface.outputCount {
+                    configs.append(CVOutputConfig(
+                        outputChannel: channelBase + 1,
+                        outputType: .pitch,
+                        trackID: track.id
+                    ))
+                }
+                
+                // Gate CV
+                if channelBase + 1 < selectedInterface.outputCount {
+                    configs.append(CVOutputConfig(
+                        outputChannel: channelBase + 2,
+                        outputType: .gate,
+                        trackID: track.id
+                    ))
+                }
+            }
+        }
+        
+        cvOutputConfigs = configs
+    }
+    
+    func updateCVConfig(_ config: CVOutputConfig) {
+        if let index = cvOutputConfigs.firstIndex(where: { $0.id == config.id }) {
+            cvOutputConfigs[index] = config
+        }
+    }
+    
+    func addCVConfig() {
+        let nextChannel = (cvOutputConfigs.map { $0.outputChannel }.max() ?? 0) + 1
+        guard nextChannel <= selectedInterface.outputCount else { return }
+        
+        cvOutputConfigs.append(CVOutputConfig(outputChannel: nextChannel))
+    }
+    
+    func removeCVConfig(_ id: UUID) {
+        cvOutputConfigs.removeAll { $0.id == id }
     }
 }

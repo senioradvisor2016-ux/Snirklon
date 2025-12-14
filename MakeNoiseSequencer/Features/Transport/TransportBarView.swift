@@ -61,6 +61,28 @@ struct TransportBarView: View {
                     .foregroundStyle(store.isPlaying ? DS.Color.led : DS.Color.textPrimary)
             }
             .modifier(PanelStyles.panelButtonModifier(isOn: store.isPlaying))
+            
+            // Audio Interface / CV Settings button
+            Button(action: { store.toggleSettings() }) {
+                HStack(spacing: DS.Space.xs) {
+                    // DC indicator
+                    if store.selectedInterface.isDCCoupled {
+                        Circle()
+                            .fill(DS.Color.led)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: DS.Color.led.opacity(0.6), radius: 3)
+                    }
+                    
+                    Text(store.selectedInterface.name)
+                        .font(DS.Font.monoS)
+                        .foregroundStyle(DS.Color.textPrimary)
+                    
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DS.Color.textSecondary)
+                }
+            }
+            .modifier(PanelStyles.panelButtonModifier(isOn: store.showSettings))
         }
         .padding(.horizontal, DS.Space.l)
         .frame(height: DS.Size.transportHeight)
