@@ -35,6 +35,11 @@ MakeNoiseSequencer/
 │   └── HelpModel.swift                # Help content database
 ├── Store/
 │   └── SequencerStore.swift           # Central state management
+├── Utils/
+│   ├── HapticEngine.swift             # Haptic feedback
+│   ├── Debouncer.swift                # Debounce/throttle utilities
+│   ├── EuclideanGenerator.swift       # Euclidean rhythm generator
+│   └── KeyboardShortcuts.swift        # Keyboard shortcuts reference
 └── Features/
     ├── Transport/
     │   ├── TransportBarView.swift
@@ -96,6 +101,19 @@ MakeNoiseSequencer/
 - ✅ Long press to open inspector
 - ✅ LED pulse animation for playhead
 - ✅ Bar and beat markers
+- ✅ **Drag-to-paint** mode for rapid step entry
+- ✅ **Probability per step** (0-100%)
+- ✅ **Ratchet/Repeat** per step (0-8 repeats)
+- ✅ **Microtiming offset** (-48 to +48 ticks)
+
+### Pattern Operations
+- ✅ **Copy/Paste** patterns, tracks, and steps
+- ✅ **Euclidean rhythm generator** with presets
+- ✅ **Humanize** function (randomize velocity/timing)
+- ✅ **Shift left/right** pattern rotation
+- ✅ **Reverse** pattern
+- ✅ **Clear/Fill** track operations
+- ✅ **Scale quantization** (Major, Minor, Pentatonic, etc.)
 
 ### CV/Gate Output
 - ✅ **DC-coupled audio interface support**
@@ -167,18 +185,61 @@ MakeNoiseSequencer/
 |---------|----------|
 | **Tap** | Toggle step on/off |
 | **Vertical drag** | Adjust velocity |
-| **Long press (0.25s)** | Open inspector |
+| **Horizontal drag** | Paint/erase steps |
+| **Long press (0.3s)** | Open inspector |
 | **Shift + tap** | Multi-select steps |
 
+### Haptic Feedback
+- Light tap on step selection
+- Medium tap on step toggle
+- Heavy tap on pattern change
+- Rhythmic ticks on playback (beat-synced)
+
 ### Keyboard Shortcuts
+
+#### Transport
 | Shortcut | Function |
 |----------|----------|
 | `Space` | Play/Stop |
-| `↑` `↓` | Change track |
-| `←` `→` | Navigate grid |
-| `1-4` | Switch pattern |
-| `Tab` | Toggle inspector |
-| `?` | Open help |
+| `Esc` | Stop & Reset |
+
+#### Editing
+| Shortcut | Function |
+|----------|----------|
+| `⌘C` | Copy selection |
+| `⌘V` | Paste |
+| `⌘Z` | Undo |
+| `⇧⌘Z` | Redo |
+| `⌘A` | Select all |
+| `⌫` | Delete |
+
+#### Pattern Operations
+| Shortcut | Function |
+|----------|----------|
+| `⌘E` | Euclidean Generator |
+| `⌘H` | Humanize |
+| `←` / `→` | Shift pattern left/right |
+| `⌘R` | Reverse pattern |
+| `⌘⌫` | Clear track |
+| `⌘F` | Fill track |
+
+#### Navigation
+| Shortcut | Function |
+|----------|----------|
+| `⌘I` | Toggle inspector |
+| `⌘,` | Settings |
+| `⌘/` | Help |
+| `1-8` | Switch pattern 1-8 |
+| `⌥↑/↓` | Change track |
+| `↑↓←→` | Navigate steps |
+| `Return` | Toggle step |
+
+#### Value Adjustments
+| Shortcut | Function |
+|----------|----------|
+| `⇧↑/↓` | Octave up/down |
+| `⌥↑/↓` | Note up/down |
+| `⌃↑/↓` | Velocity up/down |
 
 ## CV/Audio Setup
 
