@@ -51,6 +51,8 @@ class SequencerStore: ObservableObject {
     let exportManager = ExportManager()
     let cloudSyncManager = CloudSyncManager()
     let modeManager = UserModeManager()
+    let toastManager = ToastManager()
+    let confirmationManager = ConfirmationManager()
     
     // MARK: - Mode Convenience
     
@@ -441,6 +443,11 @@ class SequencerStore: ObservableObject {
         guard let trackID = selection.selectedTrackID,
               let (patternIdx, trackIdx) = findTrack(trackID) else { return }
         
+        // Store for undo
+        let previousSteps = patterns[patternIdx].tracks[trackIdx].steps
+        let trackName = patterns[patternIdx].tracks[trackIdx].name
+        var affectedCount = 0
+        
         for i in 0..<patterns[patternIdx].tracks[trackIdx].steps.count {
             guard patterns[patternIdx].tracks[trackIdx].steps[i].isOn else { continue }
             
@@ -451,10 +458,18 @@ class SequencerStore: ObservableObject {
             // Randomize timing
             let timingDelta = Int.random(in: -timingRange...timingRange)
             patterns[patternIdx].tracks[trackIdx].steps[i].adjustTiming(by: timingDelta)
+            affectedCount += 1
         }
         
         triggerHaptic(.success)
         scheduleAutoSave()
+        
+        toastManager.undo("Humaniserade \(affectedCount) steg") { [weak self] in
+            guard let self = self,
+                  let (pIdx, tIdx) = self.findTrack(trackID) else { return }
+            self.patterns[pIdx].tracks[tIdx].steps = previousSteps
+            self.toastManager.success("Ångrade humanisering")
+        }
     }
     
     func humanizeSelection(velocityRange: Int = 20, timingRange: Int = 10) {
@@ -545,19 +560,42 @@ class SequencerStore: ObservableObject {
     }
     
     func clearTrack() {
+        confirmationManager.confirmClearTrack { [weak self] in
+            self?.performClearTrack()
+        }
+    }
+    
+    private func performClearTrack() {
         guard let trackID = selection.selectedTrackID,
               let (patternIdx, trackIdx) = findTrack(trackID) else { return }
+        
+        // Store for undo
+        let previousSteps = patterns[patternIdx].tracks[trackIdx].steps
+        let trackName = patterns[patternIdx].tracks[trackIdx].name
+        
         patterns[patternIdx].tracks[trackIdx].clearAllSteps()
         triggerHaptic(.medium)
         scheduleAutoSave()
+        
+        // Show toast with undo
+        toastManager.undo("Spår \(trackName) rensat") { [weak self] in
+            guard let self = self,
+                  let (pIdx, tIdx) = self.findTrack(trackID) else { return }
+            self.patterns[pIdx].tracks[tIdx].steps = previousSteps
+            self.toastManager.success("Ångrade rensning")
+        }
     }
     
     func fillTrack(velocity: Int = 100) {
         guard let trackID = selection.selectedTrackID,
               let (patternIdx, trackIdx) = findTrack(trackID) else { return }
+        
+        let trackName = patterns[patternIdx].tracks[trackIdx].name
         patterns[patternIdx].tracks[trackIdx].fillAllSteps(velocity: velocity)
         triggerHaptic(.medium)
         scheduleAutoSave()
+        
+        toastManager.success("Spår \(trackName) fyllt")
     }
     
     // MARK: - Copy/Paste
@@ -565,27 +603,40 @@ class SequencerStore: ObservableObject {
     func copyPattern() {
         copiedPattern = currentPattern?.copy()
         triggerHaptic(.success)
+        toastManager.success("Mönster kopierat")
     }
     
     func pastePattern(to index: Int) {
-        guard let pattern = copiedPattern, index < patterns.count else { return }
+        guard let pattern = copiedPattern, index < patterns.count else {
+            toastManager.warning("Inget mönster att klistra in")
+            return
+        }
         var newPattern = pattern.copy()
         newPattern.index = index
         newPattern.name = "P\(index + 1)"
         patterns[index] = newPattern
         triggerHaptic(.success)
         scheduleAutoSave()
+        toastManager.success("Mönster inklistrat")
     }
     
     func copyTrack() {
-        copiedTrack = selectedTrack?.copy()
+        guard let track = selectedTrack else {
+            toastManager.warning("Inget spår valt")
+            return
+        }
+        copiedTrack = track.copy()
         triggerHaptic(.success)
+        toastManager.success("Spår \(track.name) kopierat")
     }
     
     func pasteTrack(to trackIndex: Int) {
         guard let track = copiedTrack,
               let patternIdx = patterns.firstIndex(where: { $0.id == currentPattern?.id }),
-              trackIndex < patterns[patternIdx].tracks.count else { return }
+              trackIndex < patterns[patternIdx].tracks.count else {
+            toastManager.warning("Inget spår att klistra in")
+            return
+        }
         
         var newTrack = track.copy()
         newTrack.midiChannel = patterns[patternIdx].tracks[trackIndex].midiChannel
@@ -593,6 +644,7 @@ class SequencerStore: ObservableObject {
         
         triggerHaptic(.success)
         scheduleAutoSave()
+        toastManager.success("Spår inklistrat")
     }
     
     func copySelectedSteps() {
@@ -602,14 +654,23 @@ class SequencerStore: ObservableObject {
             track.steps.first { $0.id == stepID }?.copy()
         }.sorted { $0.index < $1.index }
         
-        triggerHaptic(.success)
+        if copiedSteps.isEmpty {
+            toastManager.warning("Inga steg valda")
+        } else {
+            triggerHaptic(.success)
+            toastManager.success("\(copiedSteps.count) steg kopierade")
+        }
     }
     
     func pasteSteps(startingAt index: Int) {
         guard let trackID = selection.selectedTrackID,
               let (patternIdx, trackIdx) = findTrack(trackID),
-              !copiedSteps.isEmpty else { return }
+              !copiedSteps.isEmpty else {
+            toastManager.warning("Inga steg att klistra in")
+            return
+        }
         
+        var pastedCount = 0
         for (offset, step) in copiedSteps.enumerated() {
             let targetIndex = index + offset
             guard targetIndex < patterns[patternIdx].tracks[trackIdx].steps.count else { break }
@@ -617,10 +678,12 @@ class SequencerStore: ObservableObject {
             var newStep = step.copy()
             newStep.index = targetIndex
             patterns[patternIdx].tracks[trackIdx].steps[targetIndex] = newStep
+            pastedCount += 1
         }
         
         triggerHaptic(.success)
         scheduleAutoSave()
+        toastManager.success("\(pastedCount) steg inklistrade")
     }
     
     // MARK: - Inspector
@@ -655,10 +718,28 @@ class SequencerStore: ObservableObject {
     }
     
     func clearPattern() {
+        confirmationManager.confirmClearPattern { [weak self] in
+            self?.performClearPattern()
+        }
+    }
+    
+    private func performClearPattern() {
         guard let patternIdx = patterns.firstIndex(where: { $0.id == currentPattern?.id }) else { return }
+        
+        // Store for undo
+        let previousPattern = patterns[patternIdx]
+        let patternName = previousPattern.name
+        
         patterns[patternIdx].clearAll()
         triggerHaptic(.heavy)
         scheduleAutoSave()
+        
+        // Show toast with undo
+        toastManager.undo("Mönster \(patternName) rensat") { [weak self] in
+            guard let self = self else { return }
+            self.patterns[patternIdx] = previousPattern
+            self.toastManager.success("Ångrade rensning")
+        }
     }
     
     // MARK: - Audio Interface Actions

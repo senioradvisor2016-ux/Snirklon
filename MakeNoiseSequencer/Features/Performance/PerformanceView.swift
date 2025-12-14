@@ -57,6 +57,8 @@ struct PerformanceView: View {
                 OnboardingOverlay()
             }
         }
+        .toastContainer(store.toastManager)
+        .confirmationContainer(store.confirmationManager)
         // Euclidean Generator sheet (Advanced mode only)
         .sheet(isPresented: Binding(
             get: { store.showEuclideanGenerator && store.features.showEuclidean },
