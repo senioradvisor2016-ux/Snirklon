@@ -61,6 +61,7 @@ class SequencerStore: ObservableObject {
     let toastManager = ToastManager()
     let confirmationManager = ConfirmationManager()
     let errorManager = ErrorManager()
+    let featureTipManager = FeatureTipManager()
     
     // MARK: - Mode Convenience
     
@@ -319,6 +320,77 @@ class SequencerStore: ObservableObject {
         triggerHaptic(.selection)
     }
     
+    // MARK: - Keyboard Navigation
+    
+    /// Välj nästa spår (nedåt)
+    func selectNextTrack() {
+        guard let pattern = currentPattern,
+              let currentTrackID = selection.selectedTrackID,
+              let currentIndex = pattern.tracks.firstIndex(where: { $0.id == currentTrackID }) else { return }
+        
+        let nextIndex = (currentIndex + 1) % pattern.tracks.count
+        selectTrack(pattern.tracks[nextIndex].id)
+    }
+    
+    /// Välj föregående spår (uppåt)
+    func selectPreviousTrack() {
+        guard let pattern = currentPattern,
+              let currentTrackID = selection.selectedTrackID,
+              let currentIndex = pattern.tracks.firstIndex(where: { $0.id == currentTrackID }) else { return }
+        
+        let prevIndex = currentIndex > 0 ? currentIndex - 1 : pattern.tracks.count - 1
+        selectTrack(pattern.tracks[prevIndex].id)
+    }
+    
+    /// Välj steg vid index i nuvarande spår
+    func selectStepAtIndex(_ index: Int) {
+        guard let track = selectedTrack,
+              index >= 0 && index < track.steps.count else { return }
+        
+        let step = track.steps[index]
+        selection.selectStep(step.id)
+        triggerHaptic(.selection)
+    }
+    
+    /// Flytta selection till nästa steg
+    func selectNextStep() {
+        guard let track = selectedTrack else { return }
+        
+        if let currentStepID = selection.selectedStepIDs.first,
+           let currentIndex = track.steps.firstIndex(where: { $0.id == currentStepID }) {
+            let nextIndex = min(currentIndex + 1, track.steps.count - 1)
+            selectStepAtIndex(nextIndex)
+        } else {
+            selectStepAtIndex(0)
+        }
+    }
+    
+    /// Flytta selection till föregående steg
+    func selectPreviousStep() {
+        guard let track = selectedTrack else { return }
+        
+        if let currentStepID = selection.selectedStepIDs.first,
+           let currentIndex = track.steps.firstIndex(where: { $0.id == currentStepID }) {
+            let prevIndex = max(currentIndex - 1, 0)
+            selectStepAtIndex(prevIndex)
+        } else {
+            selectStepAtIndex(0)
+        }
+    }
+    
+    /// Toggle det markerade steget
+    func toggleSelectedStep() {
+        guard let stepID = selection.selectedStepIDs.first else { return }
+        toggleStep(stepID)
+    }
+    
+    /// Hämta index för det markerade steget
+    var selectedStepIndex: Int? {
+        guard let track = selectedTrack,
+              let stepID = selection.selectedStepIDs.first else { return nil }
+        return track.steps.firstIndex(where: { $0.id == stepID })
+    }
+    
     func toggleMute(for trackID: UUID) {
         guard let (patternIdx, trackIdx) = findTrack(trackID) else { return }
         patterns[patternIdx].tracks[trackIdx].isMuted.toggle()
@@ -450,6 +522,9 @@ class SequencerStore: ObservableObject {
     func humanize(velocityRange: Int = 20, timingRange: Int = 10) {
         guard let trackID = selection.selectedTrackID,
               let (patternIdx, trackIdx) = findTrack(trackID) else { return }
+        
+        // Visa feature tip vid första användning
+        showHumanizeTipIfNeeded()
         
         // Store for undo
         let previousSteps = patterns[patternIdx].tracks[trackIdx].steps
@@ -908,6 +983,29 @@ class SequencerStore: ObservableObject {
     
     func toggleEuclideanGenerator() {
         showEuclideanGenerator.toggle()
+        // Visa feature tip vid första användning
+        if showEuclideanGenerator {
+            featureTipManager.showTipIfNeeded(.euclidean)
+        }
+    }
+    
+    // MARK: - Feature Discovery
+    
+    /// Visa tips baserat på användarens aktivitet
+    func checkForFeatureTips() {
+        // Visa advanced mode tip om användaren varit i standard mode länge
+        if !modeManager.isAdvanced {
+            let sessionCount = UserDefaults.standard.integer(forKey: "sessionCount")
+            if sessionCount > 3 {
+                featureTipManager.showTipIfNeeded(.advancedMode)
+            }
+            UserDefaults.standard.set(sessionCount + 1, forKey: "sessionCount")
+        }
+    }
+    
+    /// Visa humanize tip vid första användning
+    func showHumanizeTipIfNeeded() {
+        featureTipManager.showTipIfNeeded(.humanize)
     }
     
     // MARK: - Haptic Feedback

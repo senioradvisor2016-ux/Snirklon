@@ -21,6 +21,8 @@ struct StepCellView: View {
     
     @State private var pulseOn: Bool = false
     @State private var lastVelocityDelta: Int = 0
+    @State private var isDraggingVelocity: Bool = false
+    @State private var currentDragVelocity: Int = 0
     
     /// Whether to show step indicators (Advanced mode)
     private var showIndicators: Bool {
@@ -73,7 +75,7 @@ struct StepCellView: View {
             stepIndicators
             
             // Minimal text only when selected (reveal gradually)
-            if isSelected {
+            if isSelected && !isDraggingVelocity {
                 VStack(spacing: 2) {
                     Text(Iconography.Sym.selected)
                         .font(DS.Font.monoS)
@@ -83,6 +85,11 @@ struct StepCellView: View {
                         .font(DS.Font.monoXS)
                         .foregroundStyle(DS.Color.textPrimary)
                 }
+            }
+            
+            // Velocity drag indicator
+            if isDraggingVelocity {
+                velocityDragOverlay
             }
         }
         .frame(minWidth: DS.Size.minTouch, minHeight: DS.Size.minTouch)
@@ -98,6 +105,51 @@ struct StepCellView: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Dubbelklicka för att växla. Dra vertikalt för velocity.")
         .accessibilityAddTraits(step.isOn ? .isSelected : [])
+    }
+    
+    // MARK: - Velocity Drag Overlay
+    
+    private var velocityDragOverlay: some View {
+        VStack(spacing: DS.Space.xxs) {
+            // Velocity bar
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(DS.Color.cutout)
+                    .frame(width: 20, height: 36)
+                
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(velocityBarColor)
+                    .frame(width: 20, height: CGFloat(currentDragVelocity) / 127.0 * 36)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(DS.Color.etchedLine, lineWidth: 0.5)
+            )
+            
+            // Velocity value
+            Text("\(currentDragVelocity)")
+                .font(DS.Font.monoXS)
+                .foregroundStyle(DS.Color.textPrimary)
+        }
+        .padding(DS.Space.xs)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.s)
+                .fill(DS.Color.surface.opacity(0.95))
+                .shadow(color: .black.opacity(0.3), radius: 5)
+        )
+        .transition(.scale.combined(with: .opacity))
+    }
+    
+    private var velocityBarColor: Color {
+        if currentDragVelocity > 110 {
+            return .red.opacity(0.8)
+        } else if currentDragVelocity > 90 {
+            return .orange.opacity(0.8)
+        } else if currentDragVelocity > 70 {
+            return .yellow.opacity(0.8)
+        } else {
+            return DS.Color.led
+        }
     }
     
     // MARK: - Step Indicators
@@ -172,11 +224,23 @@ struct StepCellView: View {
     private var velocityDrag: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
+                // Start drag mode
+                if !isDraggingVelocity {
+                    withAnimation(DS.Anim.fast) {
+                        isDraggingVelocity = true
+                        currentDragVelocity = step.velocity
+                    }
+                }
+                
                 // Vertical drag -> velocity
                 let dy = value.translation.height
                 let delta = Int((-dy / 6.0).rounded())
                 
-                // Only trigger haptic when crossing thresholds
+                // Calculate new velocity for display
+                let newVelocity = max(1, min(127, step.velocity + delta - lastVelocityDelta))
+                currentDragVelocity = newVelocity
+                
+                // Only trigger haptic and update when crossing thresholds
                 if delta != lastVelocityDelta && delta != 0 {
                     if abs(delta) > abs(lastVelocityDelta) {
                         HapticEngine.selection()
@@ -186,6 +250,9 @@ struct StepCellView: View {
                 }
             }
             .onEnded { _ in
+                withAnimation(DS.Anim.fast) {
+                    isDraggingVelocity = false
+                }
                 lastVelocityDelta = 0
             }
     }

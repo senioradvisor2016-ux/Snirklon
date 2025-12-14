@@ -80,6 +80,44 @@ struct StepGridView: View {
                 }
             }
         }
+        // MARK: - Keyboard Navigation
+        .focusable()
+        .onKeyPress(.leftArrow) {
+            store.selectPreviousStep()
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            store.selectNextStep()
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            store.selectPreviousTrack()
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            store.selectNextTrack()
+            return .handled
+        }
+        .onKeyPress(.space) {
+            store.togglePlayback()
+            return .handled
+        }
+        .onKeyPress(.return) {
+            store.toggleSelectedStep()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("i")], modifiers: .command) {
+            store.openInspector()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("h")], modifiers: .command) {
+            store.humanize()
+            return .handled
+        }
+        .onKeyPress(keys: [.init("e")], modifiers: .command) {
+            store.toggleEuclideanGenerator()
+            return .handled
+        }
     }
     
     // MARK: - Grid Toolbar
